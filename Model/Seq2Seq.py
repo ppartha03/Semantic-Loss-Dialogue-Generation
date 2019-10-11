@@ -92,14 +92,15 @@ class Seq2Seq(nn.Module):
         loss_e = 0.
         loss_inf = 0.
         self.Data = Data
-
+        self.sample_saver = sample_saver
         if type_ == 'valid':
-            response_ = ''
-            context_ = ''
-            target_response = ''
+            response_ = []
+            context_ = []
+            target_response = []
 
         for i in range(total_step):
             batch_size = self.Data[i]['input'].shape[0]
+            print(batch_size)
             hidden_enc = (torch.zeros(self.config['num_layers'], batch_size, self.config['hidden_size'], device=device), torch.zeros(self.config['num_layers'], batch_size, self.config['hidden_size'], device=device))
             seq_loss_a = 0
 
@@ -123,10 +124,9 @@ class Seq2Seq(nn.Module):
                     decoder_input_ = decoder_input[:,di+1,:].view(-1,1,self.config['input_size'])
                 seq_loss_a += self.criterion(input = decoder_output[:,-1,:], target = torch.max(decoder_input[:,di+1,:], dim = 1)[-1])
                 if type_ == 'valid':
-                    response_ = response_ + self.Data.Vocab_inv[torch.argmax(decoder_output.view(batch_size,-1),dim =1)] +' '
-                    context_ = context_ + self.Data.Vocab_inv[torch.argmax(input_[:,di,:].view(batch_size,-1),dim =1)] +' '
-                    target_response = target_response + self.Data.Vocab_inv[torch.argmax(decoder_in[:,di,:].view(batch_size,-1),dim =1).data.item()]+' '
-                    print(target_response)
+                    response_ = response_ + [torch.argmax(decoder_output.view(batch_size,-1),dim =1).view(-1,1)]
+                    context_ = context_ + [torch.argmax(input_[:,di,:].view(batch_size,-1),dim =1).view(-1,1)]
+                    target_response = target_response + [torch.argmax(decoder_input[:,di,:].view(batch_size,-1),dim =1).view(-1,1)]
             loss = seq_loss_a
             loss_inf += seq_loss_a.item()/total_step
             loss_e += loss.item()
@@ -139,7 +139,14 @@ class Seq2Seq(nn.Module):
                     O_.step()
                 self.writer.add_scalar('Loss/LM_Loss_train', loss_inf, ep)
             if type_ == 'valid':
-                self.sample_saver.write('Context: '+ context_ + '\n' + 'Model_Response: ' + response_ + '\n' + 'Target: ' + target_response + '\n')
+                con = torch.cat(context_,dim = 1)
+                res = torch.cat(response_,dim = 1)
+                tar = torch.cat(target_response,dim = 1)
+                for c_index in range(con.shape[0]):
+                    c = ' '.join([self.Data.Vocab_inv[idx.item()] for idx in con[c_index]])
+                    r = ' '.join([self.Data.Vocab_inv[idx.item()] for idx in res[c_index]])
+                    t = ' '.join([self.Data.Vocab_inv[idx.item()] for idx in tar[c_index]])
+                    self.sample_saver.write('Context: '+ c + '\n' + 'Model_Response: ' + r + '\n' + 'Target: ' + t + '\n\n')
             if type_ == 'eval':
                 self.writer.add_scalar('Loss/LM_Loss_eval', loss_inf, ep)
 if __name__ == '__main__':
