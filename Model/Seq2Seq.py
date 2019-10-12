@@ -27,20 +27,15 @@ if not os.path.exists('../Results/Seq2Seq/'+args.dataset+'/Samples/'):
 if not os.path.exists('./Seq2Seq/Saved_Models/'):
     os.makedirs('./Seq2Seq/Saved_Models')
 
-try:
-    saver = open('../Results/Seq2Seq_WoZ.txt','a')
-except:
-    saver = open('../Results/Seq2Seq_WoZ.txt','w')
-    saver.close()
-
 fname = '../Results/Seq2Seq/'+args.dataset+'/Log.txt'
-samples_fname = '../Results/Seq2Seq/'+args.dataset+'/Samples/Sample_Seq2Seq_'
+samples_fname = '../Results/Seq2Seq/'+args.dataset+'/Samples/Sample_'
 
 try:
     saver = open(fname,'a')
 except:
     saver = open(fname,'w')
-    sample_saver = open(samples_fname,'w')
+    if args.type == 'valid':
+        sample_saver = open(samples_fname,'w')
     saver.close()
 
 # Device configuration
@@ -93,14 +88,9 @@ class Seq2Seq(nn.Module):
         loss_inf = 0.
         self.Data = Data
         self.sample_saver = sample_saver
-        if type_ == 'valid':
-            response_ = []
-            context_ = []
-            target_response = []
 
         for i in range(total_step):
             batch_size = self.Data[i]['input'].shape[0]
-            print(batch_size)
             hidden_enc = (torch.zeros(self.config['num_layers'], batch_size, self.config['hidden_size'], device=device), torch.zeros(self.config['num_layers'], batch_size, self.config['hidden_size'], device=device))
             seq_loss_a = 0
 
@@ -108,6 +98,11 @@ class Seq2Seq(nn.Module):
             decoder_input = torch.from_numpy(self.Data[i]['target']).to(device).view(batch_size,self.config['sequence_length'],self.config['num_vertices'])
             edges_t = torch.from_numpy(self.Data[i]['edges']).to(device).view(batch_size,self.config['num_edges'])
             vertices_t = torch.from_numpy(self.Data[i]['vertices']).to(device).view(batch_size, self.config['num_vertices'])
+
+            if type_ == 'valid':
+                response_ = []
+                context_ = []
+                target_response = []
 
             for di in range(self.config['sequence_length']):
                 o_v, o_e, hidden_enc, out = self.Encoder(input_[:,di,:].view(-1,1,self.config['input_size']),hidden_enc)
@@ -130,7 +125,6 @@ class Seq2Seq(nn.Module):
             loss = seq_loss_a
             loss_inf += seq_loss_a.item()/total_step
             loss_e += loss.item()
-            print(i,'/',total_step)
             if type_ == 'train':
                 self.optimizer.zero_grad()
                 self.optimizer_dec.zero_grad()
@@ -157,18 +151,18 @@ if __name__ == '__main__':
         Data_train = FramesGraphDataset()
         Data_valid = FramesGraphDataset(suffix = 'valid')
     Data_train.setBatchSize(args.batch_size)
-    print('Data loaded')
 
     Model = Seq2Seq(config)
     if args.type == 'train':
         for epoch in range(config['num_epochs']):
+            print(epoch,'/',config['num_epochs'])
             saver = open(fname,'a') #int(len(Data_train)*args.percent)
             Model.modelrun(Data = [Data_train[1]], type_ = 'train', total_step = 1 , ep = epoch,sample_saver = None,saver = saver)
             torch.save(Model.state_dict(), './Seq2Seq/Saved_Models/Seq2Seq_'+str(args.hidden_size)+ '_'+args.dataset+'_'+str(args.batch_size))
             Data_valid.setBatchSize(args.batch_size)
             Model.modelrun(Data = Data_valid, type_ = 'eval', total_step = Data_valid.num_batches , ep = epoch,sample_saver = None,saver = saver)
     elif args.type == 'valid':
-            sample_saver = open(samples_fname+'_valid.txt','w')
-            sample_saver = open(samples_fname+'_valid.txt','a')
+            sample_saver = open(samples_fname+'valid.txt','w')
+            sample_saver = open(samples_fname+'valid.txt','a')
             Model.load_state_dict(torch.load('./Seq2Seq/Saved_Models/Seq2Seq_'+str(args.hidden_size)+ '_'+args.dataset+'_'+str(args.batch_size)))
-            Model.modelrun(Data = Data_valid, type_ = 'valid', total_step = 1, ep = 0,sample_saver = sample_saver,saver = saver)
+            Model.modelrun(Data = Data_valid, type_ = 'valid', total_step = Data_valid.num_batches, ep = 0,sample_saver = sample_saver,saver = saver)
