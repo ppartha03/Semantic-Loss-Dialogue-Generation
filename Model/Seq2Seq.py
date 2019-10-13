@@ -19,6 +19,9 @@ parser.add_argument('--hidden_size',type = int)
 parser.add_argument('--dataset',type = str)
 parser.add_argument('--batch_size',type = int)
 parser.add_argument('--type', type = str, default = 'train')
+parser.add_argument('--teacher_forcing',type = float, default = 0.1)
+parser.add_argument('--encoder_learning_rate',type = float, default = 0.004)
+parser.add_argument('--decoder_learning_rate',type = float, default = 0.004)
 args = parser.parse_args()
 
 if not os.path.exists('../Results/Seq2Seq/'+args.dataset+'/Samples/'):
@@ -38,9 +41,6 @@ except:
         sample_saver = open(samples_fname,'w')
     saver.close()
 
-# Device configuration
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-
 # Hyper-parameters
 config = {}
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -51,18 +51,24 @@ else:
     config['data'] = FramesGraphDataset()
 
 # Hyper-parameters
-config['teacher_forcing'] = 0.1
+config['teacher_forcing'] = args.teacher_forcing
 config['sequence_length'] = 101
 config['input_size'] = config['data'].vlen
 config['hidden_size'] = args.hidden_size
 config['num_layers'] = 1
 config['output_size'] = config['data'].vlen
 config['num_epochs'] = 10000
-config['learning_rate'] = 0.0001
-config['batch_size'] = 10
+config['decoder_learning_rate'] = args.decoder_learning_rate
+config['encoder_learning_rate'] = args.encoder_learning_rate
+config['batch_size'] = args.batch_size
 config['num_edges'] = config['data'].elen
 config['num_vertices'] = config['data'].vlen
+
+
 config['weights'] = [1,0] + [1]*(config['input_size'] - 2)
+# 1 => account for loss
+# 0 => mask the token
+# embedding matrix Nxd
 
 
 class Seq2Seq(nn.Module):
@@ -77,8 +83,8 @@ class Seq2Seq(nn.Module):
         self.criterion = nn.NLLLoss(weight = torch.from_numpy(np.array(config['weights'])).float()).to(device)
         # criterion_2 = nn.CrossEntropyLoss().to(device)
 
-        self.optimizer = torch.optim.RMSprop(self.Encoder.parameters(), lr = 4e-3,alpha=0.99, eps=1e-08, weight_decay=0, momentum=0, centered=False)
-        self.optimizer_dec = torch.optim.Adam(self.Decoder.parameters(), lr =4e-3)
+        self.optimizer = torch.optim.RMSprop(self.Encoder.parameters(), lr = config['encoder_learning_rate'],alpha=0.99, eps=1e-08, weight_decay=0, momentum=0, centered=False)
+        self.optimizer_dec = torch.optim.Adam(self.Decoder.parameters(), lr =config['decoder_learning_rate'])
         self.Opts = [self.optimizer, self.optimizer_dec]
 
         self.writer = SummaryWriter()
@@ -88,11 +94,11 @@ class Seq2Seq(nn.Module):
         loss_inf = 0.
         self.Data = Data
         self.sample_saver = sample_saver
+        seq_loss_a = 0.
 
         for i in range(total_step):
             batch_size = self.Data[i]['input'].shape[0]
             hidden_enc = (torch.zeros(self.config['num_layers'], batch_size, self.config['hidden_size'], device=device), torch.zeros(self.config['num_layers'], batch_size, self.config['hidden_size'], device=device))
-            seq_loss_a = 0
 
             input_ = torch.from_numpy(self.Data[i]['input']).to(device).view(batch_size,self.config['sequence_length'],self.config['num_vertices'])
             decoder_input = torch.from_numpy(self.Data[i]['target']).to(device).view(batch_size,self.config['sequence_length'],self.config['num_vertices'])
@@ -122,16 +128,8 @@ class Seq2Seq(nn.Module):
                     response_ = response_ + [torch.argmax(decoder_output.view(batch_size,-1),dim =1).view(-1,1)]
                     context_ = context_ + [torch.argmax(input_[:,di,:].view(batch_size,-1),dim =1).view(-1,1)]
                     target_response = target_response + [torch.argmax(decoder_input[:,di,:].view(batch_size,-1),dim =1).view(-1,1)]
-            loss = seq_loss_a
-            loss_inf += seq_loss_a.item()/total_step
-            loss_e += loss.item()
-            if type_ == 'train':
-                self.optimizer.zero_grad()
-                self.optimizer_dec.zero_grad()
-                loss.backward(retain_graph = True)
-                for O_ in self.Opts:
-                    O_.step()
-                self.writer.add_scalar('Loss/LM_Loss_train', loss_inf, ep)
+            loss = seq_loss_a/batch_size/config['sequence_length']
+            loss_inf += seq_loss_a.item()/batch_size/config['sequence_length']
             if type_ == 'valid':
                 con = torch.cat(context_,dim = 1)
                 res = torch.cat(response_,dim = 1)
@@ -141,8 +139,19 @@ class Seq2Seq(nn.Module):
                     r = ' '.join([self.Data.Vocab_inv[idx.item()] for idx in res[c_index]])
                     t = ' '.join([self.Data.Vocab_inv[idx.item()] for idx in tar[c_index]])
                     self.sample_saver.write('Context: '+ c + '\n' + 'Model_Response: ' + r + '\n' + 'Target: ' + t + '\n\n')
-            if type_ == 'eval':
-                self.writer.add_scalar('Loss/LM_Loss_eval', loss_inf, ep)
+        if type_ == 'eval':
+            self.writer.add_scalar('Loss/LM_Loss_eval', loss_inf, ep)
+        if type == 'train':
+            self.writer.add_scalar('Loss/LM_Loss_train', loss_inf, ep)
+
+        if type_ == 'train':
+            self.optimizer.zero_grad()
+            self.optimizer_dec.zero_grad()
+            loss.backward(retain_graph = True)
+            for O_ in self.Opts:
+                O_.step()
+
+
 if __name__ == '__main__':
     if args.dataset == 'mwoz':
         Data_train = WoZGraphDataset()
@@ -150,16 +159,16 @@ if __name__ == '__main__':
     else:
         Data_train = FramesGraphDataset()
         Data_valid = FramesGraphDataset(suffix = 'valid')
-    Data_train.setBatchSize(args.batch_size)
+    Data_train.setBatchSize(config['batch_size'])
 
     Model = Seq2Seq(config)
     if args.type == 'train':
+        Data_valid.setBatchSize(config['batch_size'])
         for epoch in range(config['num_epochs']):
             print(epoch,'/',config['num_epochs'])
-            saver = open(fname,'a') #int(len(Data_train)*args.percent)
-            Model.modelrun(Data = [Data_train[1]], type_ = 'train', total_step = 1 , ep = epoch,sample_saver = None,saver = saver)
+            saver = open(fname,'a')
+            Model.modelrun(Data = Data_train, type_ = 'train', total_step = Data_train.num_batches , ep = epoch,sample_saver = None,saver = saver)
             torch.save(Model.state_dict(), './Seq2Seq/Saved_Models/Seq2Seq_'+str(args.hidden_size)+ '_'+args.dataset+'_'+str(args.batch_size))
-            Data_valid.setBatchSize(args.batch_size)
             Model.modelrun(Data = Data_valid, type_ = 'eval', total_step = Data_valid.num_batches , ep = epoch,sample_saver = None,saver = saver)
     elif args.type == 'valid':
             sample_saver = open(samples_fname+'valid.txt','w')
