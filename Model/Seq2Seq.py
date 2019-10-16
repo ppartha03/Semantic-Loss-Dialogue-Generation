@@ -5,26 +5,29 @@ import torch
 import torch.nn as nn
 from torch.utils.tensorboard import SummaryWriter
 from torch.autograd import Variable
-sys.path.append('../Dataset/')
-sys.path.append('../Utils/')
 import numpy as np
-from WoZ_data_iterator import WoZGraphDataset
-from Frames_data_iterator import FramesGraphDataset
 import argparse
-from Bert_util import load_embeddings
 import time
 import os
+sys.path.append('../Utils/')
 
 parser = argparse.ArgumentParser()
 #parser.add_argument('--task')
-parser.add_argument('--hidden_size',type=int, default=256)
-parser.add_argument('--dataset',type=str, default="frames")
-parser.add_argument('--batch_size',type=int, default=32)
+parser.add_argument('--hidden_size', type=int, default=256)
+parser.add_argument('--dataset', type=str, default="frames")
+parser.add_argument('--batch_size', type=int, default=32)
 parser.add_argument('--type', type=str, default='train')
-parser.add_argument('--teacher_forcing',type=float, default=0.1)
-parser.add_argument('--encoder_learning_rate',type=float, default=0.004)
-parser.add_argument('--decoder_learning_rate',type=float, default=0.004)
+parser.add_argument('--teacher_forcing', type=float, default=0.1)
+parser.add_argument('--encoder_learning_rate', type=float, default=0.004)
+parser.add_argument('--decoder_learning_rate', type=float, default=0.004)
+parser.add_argument('--data_path', type=str, default="../Dataset")
 args = parser.parse_args()
+
+sys.path.append(args.data_path)
+from WoZ_data_iterator import WoZGraphDataset
+from Frames_data_iterator import FramesGraphDataset
+from Bert_util import load_embeddings
+
 
 if not os.path.exists('../Results/Seq2Seq/'+args.dataset+'/Samples/'):
     os.makedirs('../Results/Seq2Seq/'+args.dataset+'/Samples/')
@@ -45,12 +48,13 @@ except:
 
 # Hyper-parameters
 config = {}
+config['data_path'] = args.data_path
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 if args.dataset == 'mwoz':
-    config['data'] = WoZGraphDataset()
+    config['data'] = WoZGraphDataset(Data_dir=config['data_path'] + '/MULTIWOZ2/')
 else:
-    config['data'] = FramesGraphDataset()
+    config['data'] = FramesGraphDataset(Data_dir=config['data_path'] + '/Frames-dataset/')
 
 # Hyper-parameters
 config['teacher_forcing'] = args.teacher_forcing
