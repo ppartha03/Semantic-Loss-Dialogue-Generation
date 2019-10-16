@@ -21,6 +21,7 @@ parser.add_argument('--teacher_forcing', type=float, default=0.1)
 parser.add_argument('--encoder_learning_rate', type=float, default=0.004)
 parser.add_argument('--decoder_learning_rate', type=float, default=0.004)
 parser.add_argument('--data_path', type=str, default="../Dataset")
+parser.add_argument('--save_path', type=str, default="..")
 args = parser.parse_args()
 
 sys.path.append(args.data_path)
@@ -29,14 +30,14 @@ from Frames_data_iterator import FramesGraphDataset
 from Bert_util import load_embeddings
 
 
-if not os.path.exists('../Results/Seq2Seq/'+args.dataset+'/Samples/'):
-    os.makedirs('../Results/Seq2Seq/'+args.dataset+'/Samples/')
+if not os.path.exists(args.save_path + '/Results/Seq2Seq/'+args.dataset+'/Samples/'):
+    os.makedirs(args.save_path + '/Results/Seq2Seq/'+args.dataset+'/Samples/')
 
-if not os.path.exists('./Seq2Seq/Saved_Models/'):
-    os.makedirs('./Seq2Seq/Saved_Models')
+if not os.path.exists(args.save_path + '/Seq2Seq/Saved_Models/'):
+    os.makedirs(args.save_path + '/Seq2Seq/Saved_Models')
 
-fname = '../Results/Seq2Seq/'+args.dataset+'/Log.txt'
-samples_fname = '../Results/Seq2Seq/'+args.dataset+'/Samples/Sample_'
+fname = args.save_path + '/Results/Seq2Seq/'+args.dataset+'/Log.txt'
+samples_fname = args.save_path + '/Results/Seq2Seq/'+args.dataset+'/Samples/Sample_'
 
 try:
     saver = open(fname,'a')
@@ -49,6 +50,7 @@ except:
 # Hyper-parameters
 config = {}
 config['data_path'] = args.data_path
+config['save_path'] = args.save_path
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 if args.dataset == 'mwoz':
