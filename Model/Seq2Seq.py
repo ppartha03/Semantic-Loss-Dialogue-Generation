@@ -6,22 +6,24 @@ import torch.nn as nn
 from torch.utils.tensorboard import SummaryWriter
 from torch.autograd import Variable
 sys.path.append('../Dataset/')
+sys.path.append('../Utils/')
 import numpy as np
 from WoZ_data_iterator import WoZGraphDataset
 from Frames_data_iterator import FramesGraphDataset
 import argparse
+from Bert_util import load_embeddings
 import time
 import os
 
 parser = argparse.ArgumentParser()
 #parser.add_argument('--task')
-parser.add_argument('--hidden_size',type = int)
-parser.add_argument('--dataset',type = str)
-parser.add_argument('--batch_size',type = int)
-parser.add_argument('--type', type = str, default = 'train')
-parser.add_argument('--teacher_forcing',type = float, default = 0.1)
-parser.add_argument('--encoder_learning_rate',type = float, default = 0.004)
-parser.add_argument('--decoder_learning_rate',type = float, default = 0.004)
+parser.add_argument('--hidden_size',type=int, default=256)
+parser.add_argument('--dataset',type=str, default="frames")
+parser.add_argument('--batch_size',type=int, default=32)
+parser.add_argument('--type', type=str, default='train')
+parser.add_argument('--teacher_forcing',type=float, default=0.1)
+parser.add_argument('--encoder_learning_rate',type=float, default=0.004)
+parser.add_argument('--decoder_learning_rate',type=float, default=0.004)
 args = parser.parse_args()
 
 if not os.path.exists('../Results/Seq2Seq/'+args.dataset+'/Samples/'):
@@ -161,6 +163,7 @@ if __name__ == '__main__':
         Data_valid = FramesGraphDataset(suffix = 'valid')
     Data_train.setBatchSize(config['batch_size'])
 
+    words, embs = load_embeddings(args)
     Model = Seq2Seq(config)
     if args.type == 'train':
         Data_valid.setBatchSize(config['batch_size'])
