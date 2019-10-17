@@ -177,10 +177,10 @@ if __name__ == '__main__':
             print(epoch,'/',config['num_epochs'])
             saver = open(fname,'a')
             Model.modelrun(Data = Data_train, type_ = 'train', total_step = Data_train.num_batches , ep = epoch,sample_saver = None,saver = saver)
-            torch.save(Model.state_dict(), './Seq2Seq/Saved_Models/Seq2Seq_'+str(args.hidden_size)+ '_'+args.dataset+'_'+str(args.batch_size))
+            torch.save(Model.state_dict(), config['save_path'] + '/Seq2Seq/Saved_Models/Seq2Seq_'+str(args.hidden_size)+ '_'+args.dataset+'_'+str(args.batch_size))
             Model.modelrun(Data = Data_valid, type_ = 'eval', total_step = Data_valid.num_batches , ep = epoch,sample_saver = None,saver = saver)
     elif args.type == 'valid':
             sample_saver = open(samples_fname+'valid.txt','w')
             sample_saver = open(samples_fname+'valid.txt','a')
-            Model.load_state_dict(torch.load('./Seq2Seq/Saved_Models/Seq2Seq_'+str(args.hidden_size)+ '_'+args.dataset+'_'+str(args.batch_size)))
+            Model.load_state_dict(torch.load(config['save_path'] + '/Seq2Seq/Saved_Models/Seq2Seq_'+str(args.hidden_size)+ '_'+args.dataset+'_'+str(args.batch_size)))
             Model.modelrun(Data = Data_valid, type_ = 'valid', total_step = Data_valid.num_batches, ep = 0,sample_saver = sample_saver,saver = saver)
