@@ -14,7 +14,6 @@ import time
 import os
 
 parser = argparse.ArgumentParser()
-#parser.add_argument('--task')
 parser.add_argument('--hidden_size',type = int)
 parser.add_argument('--dataset',type = str)
 parser.add_argument('--batch_size',type = int)
@@ -90,13 +89,12 @@ class Seq2Seq(nn.Module):
         self.writer = SummaryWriter()
 
     def modelrun(self, Data = '', type_ = 'train', total_step = 200, ep = 0, sample_saver = '', saver = ''):
-        loss_e = 0.
         loss_inf = 0.
         self.Data = Data
         self.sample_saver = sample_saver
-        seq_loss_a = 0.
 
         for i in range(total_step):
+            seq_loss_a = 0.
             batch_size = self.Data[i]['input'].shape[0]
             hidden_enc = (torch.zeros(self.config['num_layers'], batch_size, self.config['hidden_size'], device=device), torch.zeros(self.config['num_layers'], batch_size, self.config['hidden_size'], device=device))
 
@@ -139,17 +137,18 @@ class Seq2Seq(nn.Module):
                     r = ' '.join([self.Data.Vocab_inv[idx.item()] for idx in res[c_index]])
                     t = ' '.join([self.Data.Vocab_inv[idx.item()] for idx in tar[c_index]])
                     self.sample_saver.write('Context: '+ c + '\n' + 'Model_Response: ' + r + '\n' + 'Target: ' + t + '\n\n')
+            if type_ == 'train':
+                self.optimizer.zero_grad()
+                self.optimizer_dec.zero_grad()
+                loss.backward()
+                for O_ in self.Opts:
+                    O_.step()
+
         if type_ == 'eval':
             self.writer.add_scalar('Loss/LM_Loss_eval', loss_inf, ep)
         if type == 'train':
             self.writer.add_scalar('Loss/LM_Loss_train', loss_inf, ep)
 
-        if type_ == 'train':
-            self.optimizer.zero_grad()
-            self.optimizer_dec.zero_grad()
-            loss.backward(retain_graph = True)
-            for O_ in self.Opts:
-                O_.step()
 
 
 if __name__ == '__main__':
