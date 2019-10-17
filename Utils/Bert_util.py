@@ -1,5 +1,6 @@
 import numpy as np
 import torch
+import torch.nn.functional as F
 import os
 
 #/# Load Embeddings
@@ -18,3 +19,8 @@ def load_embeddings(args):
             embs.append(coefs)
     return words, torch.tensor(embs)
 
+def bert_metric(output_embeddings, target_embeddings):
+    output_sen_embedding = torch.mean(output_embeddings, dim=1)
+    target_sen_embedding = torch.mean(target_embeddings, dim=1)
+    mse_loss = F.mse_loss(output_sen_embedding, target_sen_embedding, reduction='mean')
+    return mse_loss

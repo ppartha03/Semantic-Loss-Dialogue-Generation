@@ -27,7 +27,7 @@ args = parser.parse_args()
 sys.path.append(args.data_path)
 from WoZ_data_iterator import WoZGraphDataset
 from Frames_data_iterator import FramesGraphDataset
-from Bert_util import load_embeddings
+from Bert_util import load_embeddings, bert_metric
 
 
 if not os.path.exists(args.save_path + '/Results/Seq2Seq/'+args.dataset+'/Samples/'):
@@ -80,13 +80,14 @@ config['weights'] = [1,0] + [1]*(config['input_size'] - 2)
 
 
 class Seq2Seq(nn.Module):
-    def __init__(self, config):
+    def __init__(self, config, embeddings):
         super(Seq2Seq, self).__init__()
         #Encoder_model can be s2s or hred
         self.Data = config['data']
         self.config = config
         self.Encoder = EncoderRNN(self.config['input_size'], self.config['hidden_size'], self.config['num_layers'],num_edges = self.Data.elen, num_vertices = self.Data.vlen,).to(device)
         self.Decoder = DecoderRNN(self.config['hidden_size'], self.config['output_size'], self.config['input_size'], self.config['num_layers']).to(device)
+        self.Bert_embedding = nn.Embedding.from_pretrained(embeddings, freeze=True)
         # Loss and optimizer
         self.criterion = nn.NLLLoss(weight = torch.from_numpy(np.array(config['weights'])).float()).to(device)
         # criterion_2 = nn.CrossEntropyLoss().to(device)
@@ -112,10 +113,10 @@ class Seq2Seq(nn.Module):
             edges_t = torch.from_numpy(self.Data[i]['edges']).to(device).view(batch_size,self.config['num_edges'])
             vertices_t = torch.from_numpy(self.Data[i]['vertices']).to(device).view(batch_size, self.config['num_vertices'])
 
-            if type_ == 'valid':
-                response_ = []
-                context_ = []
-                target_response = []
+            # if type_ == 'valid':
+            response_ = []
+            context_ = []
+            target_response = []
 
             for di in range(self.config['sequence_length']):
                 o_v, o_e, hidden_enc, out = self.Encoder(input_[:,di,:].view(-1,1,self.config['input_size']),hidden_enc)
@@ -131,16 +132,19 @@ class Seq2Seq(nn.Module):
                 else:
                     decoder_input_ = decoder_input[:,di+1,:].view(-1,1,self.config['input_size'])
                 seq_loss_a += self.criterion(input = decoder_output[:,-1,:], target = torch.max(decoder_input[:,di+1,:], dim = 1)[-1])
-                if type_ == 'valid':
-                    response_ = response_ + [torch.argmax(decoder_output.view(batch_size,-1),dim =1).view(-1,1)]
-                    context_ = context_ + [torch.argmax(input_[:,di,:].view(batch_size,-1),dim =1).view(-1,1)]
-                    target_response = target_response + [torch.argmax(decoder_input[:,di,:].view(batch_size,-1),dim =1).view(-1,1)]
+                # if type_ == 'valid':
+                response_ = response_ + [torch.argmax(decoder_output.view(batch_size,-1),dim =1).view(-1,1)]
+                context_ = context_ + [torch.argmax(input_[:,di,:].view(batch_size,-1),dim =1).view(-1,1)]
+                target_response = target_response + [torch.argmax(decoder_input[:,di,:].view(batch_size,-1),dim =1).view(-1,1)]
+            con = torch.cat(context_, dim=1)
+            res = torch.cat(response_, dim=1)
+            tar = torch.cat(target_response, dim=1)
+
             loss = seq_loss_a/batch_size/config['sequence_length']
             loss_inf += seq_loss_a.item()/batch_size/config['sequence_length']
+            bert_loss = bert_metric(self.Bert_embedding(res), self.Bert_embedding(tar))
+
             if type_ == 'valid':
-                con = torch.cat(context_,dim = 1)
-                res = torch.cat(response_,dim = 1)
-                tar = torch.cat(target_response,dim = 1)
                 for c_index in range(con.shape[0]):
                     c = ' '.join([self.Data.Vocab_inv[idx.item()] for idx in con[c_index]])
                     r = ' '.join([self.Data.Vocab_inv[idx.item()] for idx in res[c_index]])
@@ -170,7 +174,7 @@ if __name__ == '__main__':
     Data_train.setBatchSize(config['batch_size'])
 
     words, embs = load_embeddings(args)
-    Model = Seq2Seq(config)
+    Model = Seq2Seq(config, embs)
     if args.type == 'train':
         Data_valid.setBatchSize(config['batch_size'])
         for epoch in range(config['num_epochs']):
