@@ -2,6 +2,7 @@ import os
 import numpy as np
 import nltk
 from nltk.tokenize import word_tokenize, sent_tokenize
+from nltk.translate.meteor_score import meteor_score
 import math
 import argparse
 import _pickle as cPickle
@@ -26,6 +27,7 @@ def Metrics(file_loc):
     r_rec = 0.0
     r_f1 = 0.0
     sent_bleu = 0.0
+    meteor_s = 0.0
     cnt_ = 0
     i=0
     while i<len(D):
@@ -34,12 +36,13 @@ def Metrics(file_loc):
         ind = tar.index('<eos>')
         r_scores = R.get_scores(' '.join(mod[:ind]),' '.join(tar[:ind]))
         sent_bleu += bleu_met([mod],tar,(0.5,0.5))
+        meteor_s += meteor_score([' '.join(mod[:ind])],' '.join(tar[:ind]))
         r_pre += r_scores[0]['rouge-l']['p']
         r_rec += r_scores[0]['rouge-l']['r']
         r_f1 += r_scores[0]['rouge-l']['f']
         i+=args.increment
         cnt_+=1
-    return {'BLEU': sent_bleu/float(cnt_),'F1': r_f1/float(cnt_), 'Recall': r_rec/float(cnt_), 'Precision': r_pre/float(cnt_)}
+    return {'METEOR':meteor_s/float(cnt_),'BLEU': sent_bleu/float(cnt_),'F1': r_f1/float(cnt_), 'Recall': r_rec/float(cnt_), 'Precision': r_pre/float(cnt_)}
 
 if __name__ == '__main__':
     mets = Metrics(args.sample)
