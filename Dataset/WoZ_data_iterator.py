@@ -14,12 +14,8 @@ class WoZGraphDataset(Dataset):
         self.Data = cPickle.load(open(Data_dir+'Dataset_' + suffix + '_WoZ.pkl','rb'))
         self.Vocab = cPickle.load(open(Data_dir+'Vocab.pkl','rb'))
         self.Vocab_inv = {}
-        self.Vocab_inv[0] ='<go>'
-        self.Vocab_inv[1] = '<eos>'
-        self.Vocab_inv[2] = '<unk>'
         for k,v in self.Vocab.items():
             self.Vocab_inv.update({v:k})
-
         self.Edges = cPickle.load(open(Data_dir+'Edges.pkl','rb'))
         self.len_data = len(self.Data)
         self.vlen = len(self.Vocab)
@@ -45,7 +41,7 @@ class WoZGraphDataset(Dataset):
             #assert len(edge_dict)>0
             for k,v in edge_dict.items():
                 vertices = [self.Vocab[v.split()[0].lower()] if v.split()[0].strip().lower() in self.Vocab else 2]
-                edge = [self.Edges[k.strip()]]
+                edge = [self.Edges[k.strip()] if k.strip() in self.Edges else 2]
                 graph+=[(vertices[0],edge[0])]
             return set(graph)
 
@@ -60,6 +56,8 @@ class WoZGraphDataset(Dataset):
         for idx in range(start_ind*self.batch_size,min(start_ind*self.batch_size+self.batch_size,self.len_data)):
             D = self.Data[idx]
             logs = D['log']
+            max_seq_len = 0
+            max_encoder_len = 0
             for k,_ in logs.items():
                 text = logs[k]['utterance']
                 if k%2==0:
@@ -69,11 +67,17 @@ class WoZGraphDataset(Dataset):
                     for edge,value in user_graph.items():
                         c_one_hot_vert = np.zeros((1,self.vlen),dtype = np.float32).sum(axis = 0)
                         c_one_hot_edge = np.zeros((1,self.elen),dtype = np.float32).sum(axis = 0)
-                        vertices = [self.Vocab[value.split()[0].strip().lower()] if value.split()[0].strip().lower() in self.Vocab else 2]
+                        if len(value.split()):
+                            vertices = [self.Vocab[value.split()[0].strip().lower()] if value.split()[0].strip().lower() in self.Vocab else 2]
+                        else:
+                            vertices = [2]
                         c_one_hot_vert = np.zeros((len(vertices),self.vlen),dtype = np.float32)
                         c_one_hot_vert[np.arange(len(vertices)),vertices] = 1.
                         c_one_hot_vert = np.sum(c_one_hot_vert, axis = 0)
-                        edge_ = [self.Edges[edge.strip()]]
+                        if len(edge.strip()):
+                            edge_ = [self.Edges[edge.strip()] if edge.strip() in self.Edges else 2]
+                        else:
+                            edge_ = [2]
                         c_one_hot_edge = np.zeros((len(edge_),self.elen),dtype = np.float32)
                         c_one_hot_edge[np.arange(len(edge_)),edge_] = 1.
                         u_vertices += [c_one_hot_vert]
@@ -95,11 +99,15 @@ class WoZGraphDataset(Dataset):
                 #print(k)
                 if k%2==0:
                     user_utt +=[one_hot_sent]
+                    if len(text) > max_encoder_len:
+                        max_encoder_len = len(text)
                 else:
                     machine_utt += [one_hot_sent]
+                    if len(text) > max_seq_len:
+                        max_seq_len = len(text)
             #print(len(user_utt),len(machine_utt))
         if start_ind*self.batch_size < self.len_data:
-            return {'input':np.array(user_utt), 'vertices':np.array(vertices_bow), 'edges': np.array(edges_bow), 'target': np.array(machine_utt)}
+            return {'encoder_length':min(max_length,max_encoder_len),'decoder_length': min(max_length,max_seq_len),'input':np.array(user_utt), 'vertices':np.array(vertices_bow), 'edges': np.array(edges_bow), 'target': np.array(machine_utt)}
         else:
             raise Exception('x should be less than {}. The value of index was: {}'.format(self.len_data, start_ind))
     def getBatch(self,batch_id = 0):

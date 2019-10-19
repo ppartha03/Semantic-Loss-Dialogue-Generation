@@ -118,14 +118,14 @@ class Seq2Seq(nn.Module):
             context_ = []
             target_response = []
 
-            for di in range(self.config['sequence_length']):
+            for di in range(self.Data[i]['encoder_length']):
                 o_v, o_e, hidden_enc, out = self.Encoder(input_[:,di,:].view(-1,1,self.config['input_size']),hidden_enc)
 
             decoder_hidden = hidden_enc
 
             decoder_input_ = decoder_input[:,0,:]
 
-            for di in range(self.config['sequence_length']-1):
+            for di in range(self.Data[i]['decoder_length']-1):
                 decoder_output, decoder_hidden = self.Decoder(decoder_input_.view(-1,1,self.config['input_size']), decoder_hidden)
                 if np.random.rand() > self.config['teacher_forcing'] and type_ == 'train':
                     decoder_input_ = decoder_output.view(-1,1,self.config['input_size'])
