@@ -3,9 +3,7 @@ from WoZ_data_iterator import WoZGraphDataset
 from bert_embedding import BertEmbedding
 
 import argparse
-import enchant
 
-d = enchant.Dict("en_US")
 bert = BertEmbedding()
 
 parser = argparse.ArgumentParser()
@@ -22,10 +20,10 @@ else:
 for i in range(D.vlen):
     print(i,'/',D.vlen)
     st = D.Vocab_inv[i]+'<del>'
-    if not d.check(D.Vocab_inv[i]):
+    if i < 4:
         st += '<del>'.join([str(0.0)]*768)
     else:
         emb = bert([D.Vocab_inv[i]])
-        st+= '<del>'.join([str(w) for w in emb[0][1][0].tolist()])
+    st+= '<del>'.join([str(w) for w in emb[0][1][0].tolist()])
     f.write(st+'\n')
 f.close()
