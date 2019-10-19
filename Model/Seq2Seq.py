@@ -73,7 +73,7 @@ config['num_edges'] = config['data'].elen
 config['num_vertices'] = config['data'].vlen
 
 
-config['weights'] = [1,0] + [1]*(config['input_size'] - 2)
+config['weights'] = [1,1,1,0] + [1]*(config['input_size'] - 4)
 # 1 => account for loss
 # 0 => mask the token
 # embedding matrix Nxd

@@ -13,12 +13,13 @@ data_directory = '../Dataset/Frames-dataset/'
 fp = open(data_directory+'frames.json')
 raw_data = json.load(fp)
 e_in = 0
-vin = 3
+vin = 4
 if args.type == 'train':
     Vocab = {}
     Vocab['<go>'] = 0
     Vocab['<eos>'] = 1
     Vocab['<unk>'] = 2
+    Vocab['<pad>'] = 3
     E_vocab = {}
 else:
     Vocab = cPickle.load(open(data_directory+'Vocab.pkl','rb'))
