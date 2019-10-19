@@ -14,9 +14,6 @@ class FramesGraphDataset(Dataset):
         self.Data = cPickle.load(open(Data_dir+'Dataset_' + suffix + '_Frames.pkl','rb'))
         self.Vocab = cPickle.load(open(Data_dir+'Vocab.pkl','rb'))
         self.Vocab_inv = {}
-        self.Vocab_inv[0] ='<go>'
-        self.Vocab_inv[1] = '<eos>'
-        self.Vocab_inv[2] = '<unk>'
         for k,v in self.Vocab.items():
             self.Vocab_inv.update({v:k})
         self.Edges = cPickle.load(open(Data_dir+'Edges.pkl','rb'))
@@ -58,6 +55,8 @@ class FramesGraphDataset(Dataset):
         decoder_mask = []
         for idx in range(start_ind*self.batch_size,min(start_ind*self.batch_size+self.batch_size,self.len_data)):
             D = self.Data[idx]
+            max_seq_len = 0
+            max_encoder_len = 0
             if 'log' in D:
                 logs = D['log']
                 for k,_ in logs.items():
@@ -95,10 +94,14 @@ class FramesGraphDataset(Dataset):
                     #print(k)
                     if k%2==0:
                         user_utt +=[one_hot_sent]
+                        if len(text) > max_encoder_len:
+                            max_encoder_len = len(text)
                     else:
-                        machine_utt += [one_hot_sent]            #print(len(user_utt),len(machine_utt))
+                        machine_utt += [one_hot_sent]
+                        if len(text) > max_seq_len:
+                            max_seq_len = len(text)
         if start_ind*self.batch_size < self.len_data:
-            return {'input':np.array(user_utt,dtype = np.float32), 'vertices':np.array(vertices_bow,dtype = np.float32), 'edges': np.array(edges_bow, dtype = np.float32), 'target': np.array(machine_utt, dtype = np.float32)}
+            return {'encoder_length':min(max_length,max_encoder_len),'decoder_length': min(max_length,max_seq_len),'input':np.array(user_utt,dtype = np.float32), 'vertices':np.array(vertices_bow,dtype = np.float32), 'edges': np.array(edges_bow, dtype = np.float32), 'target': np.array(machine_utt, dtype = np.float32)}
         else:
             raise Exception('x should be less than {}. The value of index was: {}'.format(self.len_data, start_ind))
     def getBatch(self,batch_id = 0):
