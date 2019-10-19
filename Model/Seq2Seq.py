@@ -27,7 +27,7 @@ args = parser.parse_args()
 sys.path.append(args.data_path)
 from WoZ_data_iterator import WoZGraphDataset
 from Frames_data_iterator import FramesGraphDataset
-from Bert_util import load_embeddings, bert_metric
+from Bert_util import Load_embeddings, Bert_loss, Mask_sentence
 
 
 if not os.path.exists(args.save_path + '/Results/Seq2Seq/'+args.dataset+'/Samples/'):
@@ -71,7 +71,7 @@ config['encoder_learning_rate'] = args.encoder_learning_rate
 config['batch_size'] = args.batch_size
 config['num_edges'] = config['data'].elen
 config['num_vertices'] = config['data'].vlen
-
+config['pad_index'] = 1 #change to 3 when the bert embeddings are updated and the newly generated embeddings are used
 
 config['weights'] = [1,0] + [1]*(config['input_size'] - 2)
 # 1 => account for loss
@@ -142,7 +142,10 @@ class Seq2Seq(nn.Module):
 
             loss = seq_loss_a/batch_size/config['sequence_length']
             loss_inf += seq_loss_a.item()/batch_size/config['sequence_length']
-            bert_loss = bert_metric(self.Bert_embedding(res), self.Bert_embedding(tar))
+
+            # mask_ind here corresponds to the index of the <pad> word
+            res_masked, tar_masked = Mask_sentence(res, tar, config['weights'], mask_ind=config['pad_index'])
+            loss_bert = Bert_loss(self.Bert_embedding(res_masked), self.Bert_embedding(tar_masked))
 
             if type_ == 'valid':
                 for c_index in range(con.shape[0]):
@@ -173,7 +176,7 @@ if __name__ == '__main__':
         Data_valid = FramesGraphDataset(suffix = 'valid')
     Data_train.setBatchSize(config['batch_size'])
 
-    words, embs = load_embeddings(args)
+    words, embs = Load_embeddings(args)
     Model = Seq2Seq(config, embs)
     if args.type == 'train':
         Data_valid.setBatchSize(config['batch_size'])
