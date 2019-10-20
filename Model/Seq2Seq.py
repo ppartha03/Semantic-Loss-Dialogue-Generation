@@ -88,8 +88,10 @@ config['encoder_learning_rate'] = args.encoder_learning_rate
 config['batch_size'] = args.batch_size
 config['num_edges'] = config['data'].elen
 config['num_vertices'] = config['data'].vlen
+config['pad_index'] = 1 #change to 3 when the bert embeddings are updated and the newly generated embeddings are used
 config['alpha'] = args.alpha
 config['loss'] = args.loss
+config['dataset'] = args.dataset
 config['id'] = '{}_{}_{}_{}_{}_{}_{}_{}_{}'.format(args.dataset,args.hidden_size,args.encoder_learning_rate,args.decoder_learning_rate,args.loss,args.alpha,args.toggle_loss,args.output_dropout,args.change_nll_mask)
 
 config['weights'] = np.hstack([np.array([1,1,1,0]),np.ones(config['input_size']-4)])
@@ -107,7 +109,7 @@ class Seq2Seq(nn.Module):
         self.config = config
         self.Encoder = EncoderRNN(self.config['input_size'], self.config['hidden_size'], self.config['num_layers'],num_edges = self.Data.elen, num_vertices = self.Data.vlen,).to(device)
         self.Decoder = DecoderRNN(self.config['hidden_size'], self.config['output_size'], self.config['input_size'], self.config['num_layers']).to(device)
-        _ , self.weights = Load_embeddings(args.dataset)
+        _ , self.weights = Load_embeddings(config['dataset'])
         self.Bert_embedding = nn.Embedding.from_pretrained(self.weights, freeze=True)
         # Loss and optimizer
         self.criterion = nn.NLLLoss(weight = torch.from_numpy(config['weights']).float()).to(device)
@@ -152,7 +154,8 @@ class Seq2Seq(nn.Module):
 
             decoder_input_ = decoder_input[:,0,:]
             dec_list = []
-            for di in range(self.Data[i]['decoder_length']):
+
+            for di in range(self.Data[i]['decoder_length']-1):
                 decoder_output, decoder_hidden = self.Decoder(decoder_input_.view(-1,1,self.config['input_size']), decoder_hidden)
                 if np.random.rand() > self.config['teacher_forcing'] and type_ == 'train':
                     decoder_input_ = decoder_output.view(-1,1,self.config['input_size'])
@@ -183,10 +186,11 @@ class Seq2Seq(nn.Module):
             if type_ == 'train':
                 self.optimizer.zero_grad()
                 self.optimizer_dec.zero_grad()
-                dec = torch.cat(dec_list,dim = 1).to(device)
+                dec = torch.cat(dec_list,dim = 1)
+
                 #reinforce_loss
-                R = loss_bert.view(-1,1,1).repeat(1,self.Data[i]['decoder_length'],config['input_size'])#.view(batch_size,self.Data[i]['decoder_length'],config['input_size'])
-                reinforce_loss = torch.sum(-torch.mul(dec,R.to(device)))
+                R = loss_bert.view(-1,1,1).repeat(1,self.Data[i]['decoder_length']-1,config['input_size'])#.view(batch_size,self.Data[i]['decoder_length'],config['input_size'])
+                reinforce_loss = torch.sum(-torch.mul(dec,R))
 
                 if args.loss == 'nll':
                     train_loss = loss

@@ -19,12 +19,14 @@ def Load_embeddings(dataset):
             embs.append(coefs)
     return words, torch.tensor(embs)
 
+
 def Bert_loss(output_embeddings, target_embeddings):
     output_sen_embedding = torch.mean(output_embeddings, dim=1)
     target_sen_embedding = torch.mean(target_embeddings, dim=1)
     mse_loss = F.mse_loss(output_sen_embedding, target_sen_embedding, reduction='none')
     mse_loss = torch.mean(mse_loss,dim = 1)
     return mse_loss
+
 
 def Mask_sentence(res, tar, mask_, mask_ind=3):
     res_masked = res.flatten()
@@ -36,3 +38,5 @@ def Mask_sentence(res, tar, mask_, mask_ind=3):
     tar_masked = tar_masked.reshape_as(tar)
     res_masked = res_masked.reshape_as(res)
     return res_masked, tar_masked
+
+  
