@@ -201,7 +201,7 @@ class Seq2Seq(nn.Module):
                         train_loss = loss
                     else:
                         train_loss = reinforce_loss
-                loss.backward()
+                train_loss.backward()
                 for O_ in self.Opts:
                     O_.step()
 
