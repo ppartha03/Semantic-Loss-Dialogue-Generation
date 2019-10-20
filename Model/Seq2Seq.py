@@ -15,14 +15,22 @@ parser = argparse.ArgumentParser()
 #parser.add_argument('--task')
 parser.add_argument('--hidden_size', type=int, default=256)
 parser.add_argument('--dataset', type=str, default="frames")
+parser.add_argument('--loss',type=str,default='nll') #nll, bert, combine, alternate
 parser.add_argument('--batch_size', type=int, default=32)
 parser.add_argument('--type', type=str, default='train')
+parser.add_argument('--alpha',type=float,default=0.001)
+parser.add_argument('--toggle_loss',type=float, default = 0.5)
 parser.add_argument('--teacher_forcing', type=float, default=0.1)
+parser.add_argument('--save_base', type=str, default='.')
 parser.add_argument('--encoder_learning_rate', type=float, default=0.004)
 parser.add_argument('--decoder_learning_rate', type=float, default=0.004)
 parser.add_argument('--data_path', type=str, default="../Dataset")
 parser.add_argument('--save_path', type=str, default="..")
+parser.add_argument('--reload',type=bool,default = False)
 args = parser.parse_args()
+
+save_path = os.path.join(args.save_base, 'MetaDial')
+result_path = os.path.join(save_path, 'Results', args.dataset)
 
 sys.path.append(args.data_path)
 from WoZ_data_iterator import WoZGraphDataset
@@ -30,14 +38,19 @@ from Frames_data_iterator import FramesGraphDataset
 from Bert_util import load_embeddings, bert_metric
 
 
-if not os.path.exists(args.save_path + '/Results/Seq2Seq/'+args.dataset+'/Samples/'):
-    os.makedirs(args.save_path + '/Results/Seq2Seq/'+args.dataset+'/Samples/')
+if not os.path.exists(os.path.join(result_path, 'Samples')):
+    os.makedirs(os.path.join(result_path, 'Samples'))
 
-if not os.path.exists(args.save_path + '/Seq2Seq/Saved_Models/'):
-    os.makedirs(args.save_path + '/Seq2Seq/Saved_Models')
+saved_models = os.path.join(save_path, 'Saved_Models')
+if not os.path.exists(saved_models):
+    os.makedirs(saved_models)
 
-fname = args.save_path + '/Results/Seq2Seq/'+args.dataset+'/Log.txt'
-samples_fname = args.save_path + '/Results/Seq2Seq/'+args.dataset+'/Samples/Sample_'
+log_path = os.path.join(save_path, 'logs')
+if not os.path.exists(log_path):
+    os.makedirs(log_path)
+
+fname = os.path.join(result_path, 'Log.txt')
+samples_fname = os.path.join(result_path, 'Samples')
 
 try:
     saver = open(fname,'a')
@@ -71,7 +84,9 @@ config['encoder_learning_rate'] = args.encoder_learning_rate
 config['batch_size'] = args.batch_size
 config['num_edges'] = config['data'].elen
 config['num_vertices'] = config['data'].vlen
-
+config['alpha'] = args.alpha
+config['loss'] = args.loss
+config['id'] = '{}_{}_{}_{}_{}_{}_{}'.format(args.dataset,args.hidden_size,args.encoder_learning_rate,args.decoder_learning_rate,args.loss,args.alpha,args.toggle_loss)
 
 config['weights'] = [1,1,1,0] + [1]*(config['input_size'] - 4)
 # 1 => account for loss
@@ -124,7 +139,7 @@ class Seq2Seq(nn.Module):
             decoder_hidden = hidden_enc
 
             decoder_input_ = decoder_input[:,0,:]
-
+            dec_list = []
             for di in range(self.Data[i]['decoder_length']-1):
                 decoder_output, decoder_hidden = self.Decoder(decoder_input_.view(-1,1,self.config['input_size']), decoder_hidden)
                 if np.random.rand() > self.config['teacher_forcing'] and type_ == 'train':
@@ -132,6 +147,7 @@ class Seq2Seq(nn.Module):
                 else:
                     decoder_input_ = decoder_input[:,di+1,:].view(-1,1,self.config['input_size'])
                 seq_loss_a += self.criterion(input = decoder_output[:,-1,:], target = torch.max(decoder_input[:,di+1,:], dim = 1)[-1])
+                dec_list+=[decoder_output.view(-1,1,self.config['input_size'])]
                 # if type_ == 'valid':
                 response_ = response_ + [torch.argmax(decoder_output.view(batch_size,-1),dim =1).view(-1,1)]
                 context_ = context_ + [torch.argmax(input_[:,di,:].view(batch_size,-1),dim =1).view(-1,1)]
@@ -153,6 +169,22 @@ class Seq2Seq(nn.Module):
             if type_ == 'train':
                 self.optimizer.zero_grad()
                 self.optimizer_dec.zero_grad()
+                dec = torch.cat(dec_list,dim = 1)
+                #reinforce_loss
+                R = bert_loss.view(-1,1,1).repeat(1,self.Data[i]['decoder_length']-1,config['input_size'])#.view(batch_size,self.Data[i]['decoder_length'],config['input_size'])
+                reinforce_loss = torch.sum(-torch.mul(dec,R))
+
+                if args.loss == 'nll':
+                    train_loss = loss
+                elif args.loss == 'bert':
+                    train_loss = reinforce_loss
+                elif args.loss == 'combine':
+                    train_loss = args.alpha * reinforce_loss + (1.0 - args.alpha) * loss
+                elif args.loss == 'alternate':
+                    if torch.rand(1) < args.toggle_loss:
+                        train_loss = loss
+                    else:
+                        train_loss = reinforce_loss
                 loss.backward()
                 for O_ in self.Opts:
                     O_.step()
@@ -175,16 +207,18 @@ if __name__ == '__main__':
 
     words, embs = load_embeddings(args)
     Model = Seq2Seq(config, embs)
+    if args.reload:
+        Model.load_state_dict(torch.load(os.path.join(saved_models, config['id'])))
     if args.type == 'train':
         Data_valid.setBatchSize(config['batch_size'])
         for epoch in range(config['num_epochs']):
             print(epoch,'/',config['num_epochs'])
             saver = open(fname,'a')
             Model.modelrun(Data = Data_train, type_ = 'train', total_step = Data_train.num_batches , ep = epoch,sample_saver = None,saver = saver)
-            torch.save(Model.state_dict(), config['save_path'] + '/Seq2Seq/Saved_Models/Seq2Seq_'+str(args.hidden_size)+ '_'+args.dataset+'_'+str(args.batch_size))
+            torch.save(Model.state_dict(), os.path.join(saved_models, config['id']))
             Model.modelrun(Data = Data_valid, type_ = 'eval', total_step = Data_valid.num_batches , ep = epoch,sample_saver = None,saver = saver)
     elif args.type == 'valid':
-            sample_saver = open(samples_fname+'valid.txt','w')
-            sample_saver = open(samples_fname+'valid.txt','a')
-            Model.load_state_dict(torch.load(config['save_path'] + '/Seq2Seq/Saved_Models/Seq2Seq_'+str(args.hidden_size)+ '_'+args.dataset+'_'+str(args.batch_size)))
+            sample_saver = open(samples_fname+config['id']+'.txt','w')
+            sample_saver = open(samples_fname+config['id']+'.txt','a')
+            Model.load_state_dict(torch.load(os.path.join(saved_models, config['id'])))
             Model.modelrun(Data = Data_valid, type_ = 'valid', total_step = Data_valid.num_batches, ep = 0,sample_saver = sample_saver,saver = saver)

@@ -1,8 +1,10 @@
 {
   "type": ["train"],
-  "hidden_size": [128,256,512],
-  "batch_size": [32,64,128],
-  "encoder_learning_rate": [0.0001,0.001,0.00001],
-  "decoder_learning_rate": [0.0001,0.001,0.00001],
-  "dataset": ["mwoz","frames"]
+  "hidden_size": [128],
+  "batch_size": [8],
+  "encoder_learning_rate": [0.0001],
+  "decoder_learning_rate": [0.0001],
+  "dataset": ["mwoz","frames"],
+  "loss":["nll","bert","combine","alternate"],
+  "alpha":[0.1,0.01,0.001,0.0001,0.00001]
 }

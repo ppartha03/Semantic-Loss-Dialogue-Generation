@@ -22,5 +22,6 @@ def load_embeddings(args):
 def bert_metric(output_embeddings, target_embeddings):
     output_sen_embedding = torch.mean(output_embeddings, dim=1)
     target_sen_embedding = torch.mean(target_embeddings, dim=1)
-    mse_loss = F.mse_loss(output_sen_embedding, target_sen_embedding, reduction='mean')
+    mse_loss = F.mse_loss(output_sen_embedding, target_sen_embedding, reduction='none')
+    mse_loss = torch.mean(mse_loss,dim = 1)
     return mse_loss
