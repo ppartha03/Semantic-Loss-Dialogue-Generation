@@ -1,13 +1,10 @@
 from RNN import EncoderRNN, DecoderRNN, Q_predictor
-import torch.nn.functional as F
 import sys
 import torch
 import torch.nn as nn
 from torch.utils.tensorboard import SummaryWriter
-from torch.autograd import Variable
 import numpy as np
 import argparse
-import time
 import os
 sys.path.append('../Utils/')
 
@@ -26,7 +23,6 @@ parser.add_argument('--save_base', type=str, default='.')
 parser.add_argument('--encoder_learning_rate', type=float, default=0.004)
 parser.add_argument('--decoder_learning_rate', type=float, default=0.004)
 parser.add_argument('--data_path', type=str, default="../Dataset")
-parser.add_argument('--save_path', type=str, default="..")
 parser.add_argument('--reload',type=bool,default = False)
 parser.add_argument('--output_dropout',type=float,default = 0.95)
 args = parser.parse_args()
@@ -51,6 +47,10 @@ log_path = os.path.join(save_path, 'logs')
 if not os.path.exists(log_path):
     os.makedirs(log_path)
 
+tensorboard_path = os.path.join(save_path, 'tensorboard')
+if not os.path.exists(tensorboard_path):
+    os.makedirs(tensorboard_path)
+
 fname = os.path.join(result_path, 'Log.txt')
 samples_fname = os.path.join(result_path, 'Samples')
 
@@ -65,7 +65,8 @@ except:
 # Hyper-parameters
 config = {}
 config['data_path'] = args.data_path
-config['save_path'] = args.save_path
+config['save_path'] = save_path
+config['tensorboard_path'] = tensorboard_path
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
 if args.dataset == 'mwoz':
@@ -119,7 +120,7 @@ class Seq2Seq(nn.Module):
         self.optimizer_dec = torch.optim.Adam(self.Decoder.parameters(), lr =config['decoder_learning_rate'])
         self.Opts = [self.optimizer, self.optimizer_dec]
 
-        self.writer = SummaryWriter()
+        self.writer = SummaryWriter(config['tensorboard_path'])
 
     def modelrun(self, Data = '', type_ = 'train', total_step = 200, ep = 0, sample_saver = '', saver = ''):
         loss_inf = 0.
@@ -203,7 +204,7 @@ class Seq2Seq(nn.Module):
                         train_loss = loss
                     else:
                         train_loss = reinforce_loss
-                loss.backward()
+                train_loss.backward()
                 for O_ in self.Opts:
                     O_.step()
 
