@@ -21,12 +21,14 @@ parser.add_argument('--type', type=str, default='train')
 parser.add_argument('--alpha',type=float,default=0.001)
 parser.add_argument('--toggle_loss',type=float, default = 0.5)
 parser.add_argument('--teacher_forcing', type=float, default=0.1)
+parser.add_argument('--change_nll_mask',type=bool, default=False)
 parser.add_argument('--save_base', type=str, default='.')
 parser.add_argument('--encoder_learning_rate', type=float, default=0.004)
 parser.add_argument('--decoder_learning_rate', type=float, default=0.004)
 parser.add_argument('--data_path', type=str, default="../Dataset")
 parser.add_argument('--save_path', type=str, default="..")
 parser.add_argument('--reload',type=bool,default = False)
+parser.add_argument('--output_dropout',type=float,default = 0.95)
 args = parser.parse_args()
 
 save_path = os.path.join(args.save_base, 'MetaDial')
@@ -79,6 +81,8 @@ config['hidden_size'] = args.hidden_size
 config['num_layers'] = 1
 config['output_size'] = config['data'].vlen
 config['num_epochs'] = 10000
+config['output_dropout'] = args.output_dropout
+config['change_nll_mask'] = args.change_nll_mask
 config['decoder_learning_rate'] = args.decoder_learning_rate
 config['encoder_learning_rate'] = args.encoder_learning_rate
 config['batch_size'] = args.batch_size
@@ -87,25 +91,28 @@ config['num_vertices'] = config['data'].vlen
 config['pad_index'] = 1 #change to 3 when the bert embeddings are updated and the newly generated embeddings are used
 config['alpha'] = args.alpha
 config['loss'] = args.loss
-config['id'] = '{}_{}_{}_{}_{}_{}_{}'.format(args.dataset,args.hidden_size,args.encoder_learning_rate,args.decoder_learning_rate,args.loss,args.alpha,args.toggle_loss)
+config['dataset'] = args.dataset
+config['id'] = '{}_{}_{}_{}_{}_{}_{}_{}_{}'.format(args.dataset,args.hidden_size,args.encoder_learning_rate,args.decoder_learning_rate,args.loss,args.alpha,args.toggle_loss,args.output_dropout,args.change_nll_mask)
 
-config['weights'] = [1,1,1,0] + [1]*(config['input_size'] - 4)
+config['weights'] = np.hstack([np.array([1,1,1,0]),np.ones(config['input_size']-4)])
+config['pad_index'] = 3
 # 1 => account for loss
 # 0 => mask the token
 # embedding matrix Nxd
 
 
 class Seq2Seq(nn.Module):
-    def __init__(self, config, embeddings):
+    def __init__(self, config):
         super(Seq2Seq, self).__init__()
         #Encoder_model can be s2s or hred
         self.Data = config['data']
         self.config = config
         self.Encoder = EncoderRNN(self.config['input_size'], self.config['hidden_size'], self.config['num_layers'],num_edges = self.Data.elen, num_vertices = self.Data.vlen,).to(device)
         self.Decoder = DecoderRNN(self.config['hidden_size'], self.config['output_size'], self.config['input_size'], self.config['num_layers']).to(device)
-        self.Bert_embedding = nn.Embedding.from_pretrained(embeddings, freeze=True)
+        _ , self.weights = Load_embeddings(config['dataset'])
+        self.Bert_embedding = nn.Embedding.from_pretrained(self.weights, freeze=True)
         # Loss and optimizer
-        self.criterion = nn.NLLLoss(weight = torch.from_numpy(np.array(config['weights'])).float()).to(device)
+        self.criterion = nn.NLLLoss(weight = torch.from_numpy(config['weights']).float()).to(device)
         # criterion_2 = nn.CrossEntropyLoss().to(device)
 
         self.optimizer = torch.optim.RMSprop(self.Encoder.parameters(), lr = config['encoder_learning_rate'],alpha=0.99, eps=1e-08, weight_decay=0, momentum=0, centered=False)
@@ -133,10 +140,16 @@ class Seq2Seq(nn.Module):
             response_ = []
             context_ = []
             target_response = []
+            # Generate random masks
+            if args.type == 'train' and config['output_dropout'] > 0:
+                weight_random = np.random.random(len(config['weights'])-4) > config['output_dropout']
+                config['weights'] = np.hstack([config['weights'][:4],weight_random.astype(int)])
+                if config['change_nll_mask']:
+                    self.criterion = nn.NLLLoss(weight = torch.from_numpy(config['weights']).float()).to(device)
 
             for di in range(self.Data[i]['encoder_length']):
                 o_v, o_e, hidden_enc, out = self.Encoder(input_[:,di,:].view(-1,1,self.config['input_size']),hidden_enc)
-
+                context_ = context_ + [torch.argmax(input_[:,di,:].view(batch_size,-1),dim =1).view(-1,1)]
             decoder_hidden = hidden_enc
 
             decoder_input_ = decoder_input[:,0,:]
@@ -150,10 +163,9 @@ class Seq2Seq(nn.Module):
                     decoder_input_ = decoder_input[:,di+1,:].view(-1,1,self.config['input_size'])
                 seq_loss_a += self.criterion(input = decoder_output[:,-1,:], target = torch.max(decoder_input[:,di+1,:], dim = 1)[-1])
                 dec_list+=[decoder_output.view(-1,1,self.config['input_size'])]
-                # if type_ == 'valid':
-                response_ = response_ + [torch.argmax(decoder_output.view(batch_size,-1),dim =1).view(-1,1)]
-                context_ = context_ + [torch.argmax(input_[:,di,:].view(batch_size,-1),dim =1).view(-1,1)]
+                #if type_ == 'valid':
                 target_response = target_response + [torch.argmax(decoder_input[:,di,:].view(batch_size,-1),dim =1).view(-1,1)]
+                response_ = response_ + [torch.argmax(decoder_output.view(batch_size,-1),dim =1).view(-1,1)]
             con = torch.cat(context_, dim=1)
             res = torch.cat(response_, dim=1)
             tar = torch.cat(target_response, dim=1)
@@ -211,8 +223,7 @@ if __name__ == '__main__':
         Data_valid = FramesGraphDataset(suffix = 'valid')
     Data_train.setBatchSize(config['batch_size'])
 
-    words, embs = Load_embeddings(args)
-    Model = Seq2Seq(config, embs)
+    Model = Seq2Seq(config)
     if args.reload:
         Model.load_state_dict(torch.load(os.path.join(saved_models, config['id'])))
     if args.type == 'train':
@@ -222,7 +233,7 @@ if __name__ == '__main__':
             saver = open(fname,'a')
             Model.modelrun(Data = Data_train, type_ = 'train', total_step = Data_train.num_batches , ep = epoch,sample_saver = None,saver = saver)
             torch.save(Model.state_dict(), os.path.join(saved_models, config['id']))
-            Model.modelrun(Data = Data_valid, type_ = 'eval', total_step = Data_valid.num_batches , ep = epoch,sample_saver = None,saver = saver)
+            #Model.modelrun(Data = Data_valid, type_ = 'eval', total_step = Data_valid.num_batches , ep = epoch,sample_saver = None,saver = saver)
     elif args.type == 'valid':
             sample_saver = open(samples_fname+config['id']+'.txt','w')
             sample_saver = open(samples_fname+config['id']+'.txt','a')

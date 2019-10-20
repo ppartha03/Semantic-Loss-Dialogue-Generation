@@ -4,8 +4,8 @@ import torch.nn.functional as F
 import os
 
 #/# Load Embeddings
-def Load_embeddings(args):
-    if args.dataset == 'mwoz':
+def Load_embeddings(dataset):
+    if dataset == 'mwoz':
         embeddings_file = "mwoz_embedding.txt"
     else:
         embeddings_file = "frames_embedding.txt"
@@ -39,3 +39,4 @@ def Mask_sentence(res, tar, mask_, mask_ind=3):
     res_masked = res_masked.reshape_as(res)
     return res_masked, tar_masked
 
+  
