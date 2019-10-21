@@ -22,9 +22,11 @@ parser.add_argument('--change_nll_mask',type=bool, default=False)
 parser.add_argument('--save_base', type=str, default='..')
 parser.add_argument('--encoder_learning_rate', type=float, default=0.0001)
 parser.add_argument('--decoder_learning_rate', type=float, default=0.0001)
-parser.add_argument('--data_path', type=str, default="../Dataset")
-parser.add_argument('--reload',type=bool,default = False)
 parser.add_argument('--output_dropout',type=float,default = 0.95)
+parser.add_argument('--data_path', type=str, default="../Dataset")
+parser.add_argument('--save_every_epoch',type=bool,default=False)
+parser.add_argument('--reload',type=bool,default = False)
+parser.add_argument('--start_epoch',type=int,default = 0)
 parser.add_argument('--num_epochs',type=int,default = 100)
 args = parser.parse_args()
 
@@ -93,6 +95,7 @@ config['alpha'] = args.alpha
 config['loss'] = args.loss
 config['dataset'] = args.dataset
 config['device'] = device
+config['save_every_epoch'] = args.save_every_epoch
 config['id'] = '{}_{}_{}_{}_{}_{}_{}_{}_{}'.format(args.dataset,args.hidden_size,args.encoder_learning_rate,args.decoder_learning_rate,args.loss,args.alpha,args.toggle_loss,args.output_dropout,args.change_nll_mask)
 
 config['weights'] = np.hstack([np.array([1,1,1,0]),np.ones(config['input_size']-4)])
@@ -223,15 +226,21 @@ if __name__ == '__main__':
     Data_train.setBatchSize(config['batch_size'])
 
     Model = Seq2Seq(config)
-    if args.reload:
+    if args.reload and args.start_epoch != 0:
+        Model.load_state_dict(torch.load(os.path.join(saved_models, config['id'] + '_' + str(args.start_epoch))))
+    elif args.reload :
         Model.load_state_dict(torch.load(os.path.join(saved_models, config['id'])))
     if args.type == 'train':
         Data_valid.setBatchSize(config['batch_size'])
-        for epoch in range(config['num_epochs']):
+        if not args.reload:
+            args.start_epoch = 0
+        for epoch in range(args.start_epoch, config['num_epochs']):
             print(epoch,'/',config['num_epochs'])
             saver = open(fname,'a')
             Model.modelrun(Data = Data_train, type_ = 'train', total_step = Data_train.num_batches , ep = epoch,sample_saver = None,saver = saver)
             torch.save(Model.state_dict(), os.path.join(saved_models, config['id']))
+            if config['save_every_epoch']:
+                torch.save(Model.state_dict(), os.path.join(saved_models, config['id'] + '_' + str(epoch)))
             Model.modelrun(Data = Data_valid, type_ = 'eval', total_step = Data_valid.num_batches , ep = epoch,sample_saver = None,saver = saver)
     elif args.type == 'valid':
             sample_saver = open(samples_fname+config['id']+'.txt','w')
