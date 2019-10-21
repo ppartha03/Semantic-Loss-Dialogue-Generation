@@ -12,19 +12,20 @@ parser = argparse.ArgumentParser()
 #parser.add_argument('--task')
 parser.add_argument('--hidden_size', type=int, default=256)
 parser.add_argument('--dataset', type=str, default="frames")
-parser.add_argument('--loss',type=str,default='nll') #nll, bert, combine, alternate
-parser.add_argument('--batch_size', type=int, default=32)
+parser.add_argument('--loss',type=str,default='combine') #nll, bert, combine, alternate
+parser.add_argument('--batch_size', type=int, default=8)
 parser.add_argument('--type', type=str, default='train')
-parser.add_argument('--alpha',type=float,default=0.001)
+parser.add_argument('--alpha',type=float,default=0.1)
 parser.add_argument('--toggle_loss',type=float, default = 0.5)
 parser.add_argument('--teacher_forcing', type=float, default=0.1)
 parser.add_argument('--change_nll_mask',type=bool, default=False)
-parser.add_argument('--save_base', type=str, default='.')
-parser.add_argument('--encoder_learning_rate', type=float, default=0.004)
-parser.add_argument('--decoder_learning_rate', type=float, default=0.004)
+parser.add_argument('--save_base', type=str, default='..')
+parser.add_argument('--encoder_learning_rate', type=float, default=0.0001)
+parser.add_argument('--decoder_learning_rate', type=float, default=0.0001)
 parser.add_argument('--data_path', type=str, default="../Dataset")
 parser.add_argument('--reload',type=bool,default = False)
 parser.add_argument('--output_dropout',type=float,default = 0.95)
+parser.add_argument('--num_epochs',type=float,default = 100)
 args = parser.parse_args()
 
 save_path = os.path.join(args.save_base, 'MetaDial')
@@ -81,7 +82,7 @@ config['input_size'] = config['data'].vlen
 config['hidden_size'] = args.hidden_size
 config['num_layers'] = 1
 config['output_size'] = config['data'].vlen
-config['num_epochs'] = 10000
+config['num_epochs'] = args.num_epochs
 config['output_dropout'] = args.output_dropout
 config['change_nll_mask'] = eval(args.change_nll_mask)
 config['decoder_learning_rate'] = args.decoder_learning_rate
