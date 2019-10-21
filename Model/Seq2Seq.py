@@ -25,7 +25,7 @@ parser.add_argument('--decoder_learning_rate', type=float, default=0.0001)
 parser.add_argument('--data_path', type=str, default="../Dataset")
 parser.add_argument('--reload',type=bool,default = False)
 parser.add_argument('--output_dropout',type=float,default = 0.95)
-parser.add_argument('--num_epochs',type=float,default = 100)
+parser.add_argument('--num_epochs',type=int,default = 100)
 args = parser.parse_args()
 
 save_path = os.path.join(args.save_base, 'MetaDial')
@@ -84,7 +84,7 @@ config['num_layers'] = 1
 config['output_size'] = config['data'].vlen
 config['num_epochs'] = args.num_epochs
 config['output_dropout'] = args.output_dropout
-config['change_nll_mask'] = eval(args.change_nll_mask)
+config['change_nll_mask'] = args.change_nll_mask
 config['decoder_learning_rate'] = args.decoder_learning_rate
 config['encoder_learning_rate'] = args.encoder_learning_rate
 config['batch_size'] = args.batch_size
@@ -131,10 +131,8 @@ class Seq2Seq(nn.Module):
             batch_size = self.Data[i]['input'].shape[0]
             hidden_enc = (torch.zeros(self.config['num_layers'], batch_size, self.config['hidden_size'], device=device), torch.zeros(self.config['num_layers'], batch_size, self.config['hidden_size'], device=device))
 
-            input_ = torch.from_numpy(self.Data[i]['input']).to(device).view(batch_size,self.config['sequence_length'],self.config['num_vertices'])
-            decoder_input = torch.from_numpy(self.Data[i]['target']).to(device).view(batch_size,self.config['sequence_length'],self.config['num_vertices'])
-            edges_t = torch.from_numpy(self.Data[i]['edges']).to(device).view(batch_size,self.config['num_edges'])
-            vertices_t = torch.from_numpy(self.Data[i]['vertices']).to(device).view(batch_size, self.config['num_vertices'])
+            input_ = torch.from_numpy(self.Data[i]['input']).to(device).view(batch_size,self.config['sequence_length'],self.config['input_size'])
+            decoder_input = torch.from_numpy(self.Data[i]['target']).to(device).view(batch_size,self.config['sequence_length'],self.config['input_size'])
 
             # if type_ == 'valid':
             response_ = []
