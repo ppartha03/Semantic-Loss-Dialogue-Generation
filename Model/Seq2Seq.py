@@ -92,6 +92,7 @@ config['pad_index'] = 1 #change to 3 when the bert embeddings are updated and th
 config['alpha'] = args.alpha
 config['loss'] = args.loss
 config['dataset'] = args.dataset
+config['device'] = device
 config['id'] = '{}_{}_{}_{}_{}_{}_{}_{}_{}'.format(args.dataset,args.hidden_size,args.encoder_learning_rate,args.decoder_learning_rate,args.loss,args.alpha,args.toggle_loss,args.output_dropout,args.change_nll_mask)
 
 config['weights'] = np.hstack([np.array([1,1,1,0]),np.ones(config['input_size']-4)])
@@ -107,13 +108,13 @@ class Seq2Seq(nn.Module):
         #Encoder_model can be s2s or hred
         self.Data = config['data']
         self.config = config
-        self.Encoder = EncoderRNN(self.config['input_size'], self.config['hidden_size'], self.config['num_layers'],num_edges = self.Data.elen, num_vertices = self.Data.vlen,).to(device)
-        self.Decoder = DecoderRNN(self.config['hidden_size'], self.config['output_size'], self.config['input_size'], self.config['num_layers']).to(device)
-        _ , self.weights = Load_embeddings(config['dataset'])
-        self.Bert_embedding = nn.Embedding.from_pretrained(self.weights, freeze=True)
+        self.Encoder = EncoderRNN(self.config['input_size'], self.config['hidden_size'], self.config['num_layers'],num_edges = self.Data.elen, num_vertices = self.Data.vlen,).to(self.config['device'])
+        self.Decoder = DecoderRNN(self.config['hidden_size'], self.config['output_size'], self.config['input_size'], self.config['num_layers']).to(self.config['device'])
+        _ , self.weights = Load_embeddings(config['dataset'], )
+        self.Bert_embedding = nn.Embedding.from_pretrained(self.weights, freeze=True).to(self.config['device'])
         # Loss and optimizer
-        self.criterion = nn.NLLLoss(weight = torch.from_numpy(config['weights']).float()).to(device)
-        # criterion_2 = nn.CrossEntropyLoss().to(device)
+        self.criterion = nn.NLLLoss(weight = torch.from_numpy(config['weights']).float()).to(self.config['device'])
+        # criterion_2 = nn.CrossEntropyLoss().to(self.config['device'])
 
         self.optimizer = torch.optim.RMSprop(self.Encoder.parameters(), lr = config['encoder_learning_rate'],alpha=0.99, eps=1e-08, weight_decay=0, momentum=0, centered=False)
         self.optimizer_dec = torch.optim.Adam(self.Decoder.parameters(), lr =config['decoder_learning_rate'])
@@ -131,8 +132,8 @@ class Seq2Seq(nn.Module):
             batch_size = self.Data[i]['input'].shape[0]
             hidden_enc = (torch.zeros(self.config['num_layers'], batch_size, self.config['hidden_size'], device=device), torch.zeros(self.config['num_layers'], batch_size, self.config['hidden_size'], device=device))
 
-            input_ = torch.from_numpy(self.Data[i]['input']).to(device).view(batch_size,self.config['sequence_length'],self.config['input_size'])
-            decoder_input = torch.from_numpy(self.Data[i]['target']).to(device).view(batch_size,self.config['sequence_length'],self.config['input_size'])
+            input_ = torch.from_numpy(self.Data[i]['input']).to(self.config['device']).view(batch_size,self.config['sequence_length'],self.config['input_size'])
+            decoder_input = torch.from_numpy(self.Data[i]['target']).to(self.config['device']).view(batch_size,self.config['sequence_length'],self.config['input_size'])
 
             # if type_ == 'valid':
             response_ = []
@@ -143,7 +144,7 @@ class Seq2Seq(nn.Module):
                 weight_random = np.random.random(len(config['weights'])-4) > config['output_dropout']
                 config['weights'] = np.hstack([config['weights'][:4],weight_random.astype(int)])
                 if config['change_nll_mask']:
-                    self.criterion = nn.NLLLoss(weight = torch.from_numpy(config['weights']).float()).to(device)
+                    self.criterion = nn.NLLLoss(weight = torch.from_numpy(config['weights']).float()).to(self.config['device'])
 
             for di in range(self.Data[i]['encoder_length']):
                 o_v, o_e, hidden_enc, out = self.Encoder(input_[:,di,:].view(-1,1,self.config['input_size']),hidden_enc)
@@ -237,3 +238,4 @@ if __name__ == '__main__':
             sample_saver = open(samples_fname+config['id']+'.txt','a')
             Model.load_state_dict(torch.load(os.path.join(saved_models, config['id'])))
             Model.modelrun(Data = Data_valid, type_ = 'valid', total_step = Data_valid.num_batches, ep = 0,sample_saver = sample_saver,saver = saver)
+
