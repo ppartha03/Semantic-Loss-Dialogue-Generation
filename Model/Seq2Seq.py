@@ -228,9 +228,9 @@ if __name__ == '__main__':
         for epoch in range(config['num_epochs']):
             print(epoch,'/',config['num_epochs'])
             saver = open(fname,'a')
-            Model.modelrun(Data = Data_train, type_ = 'train', total_step = 1 , ep = epoch,sample_saver = None,saver = saver)
+            Model.modelrun(Data = Data_train, type_ = 'train', total_step = Data_train.num_batches , ep = epoch,sample_saver = None,saver = saver)
             torch.save(Model.state_dict(), os.path.join(saved_models, config['id']))
-            #Model.modelrun(Data = Data_valid, type_ = 'eval', total_step = Data_valid.num_batches , ep = epoch,sample_saver = None,saver = saver)
+            Model.modelrun(Data = Data_valid, type_ = 'eval', total_step = Data_valid.num_batches , ep = epoch,sample_saver = None,saver = saver)
     elif args.type == 'valid':
             sample_saver = open(samples_fname+config['id']+'.txt','w')
             sample_saver = open(samples_fname+config['id']+'.txt','a')
