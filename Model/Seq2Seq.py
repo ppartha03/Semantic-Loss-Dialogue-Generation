@@ -21,7 +21,7 @@ parser.add_argument('--type', type=str, default='train')
 parser.add_argument('--alpha',type=float,default=0.001)
 parser.add_argument('--toggle_loss',type=float, default = 0.5)
 parser.add_argument('--teacher_forcing', type=float, default=0.1)
-parser.add_argument('--change_nll_mask',type=bool, default=False)
+parser.add_argument('--change_nll_mask',type=str, default="False")
 parser.add_argument('--save_base', type=str, default='.')
 parser.add_argument('--encoder_learning_rate', type=float, default=0.004)
 parser.add_argument('--decoder_learning_rate', type=float, default=0.004)
@@ -129,10 +129,8 @@ class Seq2Seq(nn.Module):
             batch_size = self.Data[i]['input'].shape[0]
             hidden_enc = (torch.zeros(self.config['num_layers'], batch_size, self.config['hidden_size'], device=device), torch.zeros(self.config['num_layers'], batch_size, self.config['hidden_size'], device=device))
 
-            input_ = torch.from_numpy(self.Data[i]['input']).to(device).view(batch_size,self.config['sequence_length'],self.config['num_vertices'])
-            decoder_input = torch.from_numpy(self.Data[i]['target']).to(device).view(batch_size,self.config['sequence_length'],self.config['num_vertices'])
-            edges_t = torch.from_numpy(self.Data[i]['edges']).to(device).view(batch_size,self.config['num_edges'])
-            vertices_t = torch.from_numpy(self.Data[i]['vertices']).to(device).view(batch_size, self.config['num_vertices'])
+            input_ = torch.from_numpy(self.Data[i]['input']).to(device).view(batch_size,self.config['sequence_length'],self.config['input_size'])
+            decoder_input = torch.from_numpy(self.Data[i]['target']).to(device).view(batch_size,self.config['sequence_length'],self.config['input_size'])
 
             # if type_ == 'valid':
             response_ = []
