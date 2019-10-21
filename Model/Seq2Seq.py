@@ -174,7 +174,7 @@ class Seq2Seq(nn.Module):
             loss_inf += seq_loss_a.item()/batch_size/config['sequence_length']
 
             # mask_ind here corresponds to the index of the <pad> word
-            res_masked, tar_masked = Mask_sentence(res, tar, config['weights'], mask_ind=config['pad_index'])
+            res_masked, tar_masked = Mask_sentence(res, tar, config['weights'], mask_ind=config['pad_index'], device=device)
             loss_bert = Bert_loss(self.Bert_embedding(res_masked), self.Bert_embedding(tar_masked))
 
             if type_ == 'valid':

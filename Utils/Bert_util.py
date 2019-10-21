@@ -28,10 +28,10 @@ def Bert_loss(output_embeddings, target_embeddings):
     return mse_loss
 
 
-def Mask_sentence(res, tar, mask_, mask_ind=3):
+def Mask_sentence(res, tar, mask_, mask_ind=3, device=None):
     res_masked = res.flatten()
     tar_masked = tar.flatten()
-    mask = ~torch.Tensor(mask_).bool()
+    mask = ~torch.Tensor(mask_, device=device).bool()
     mask = torch.index_select(mask, dim=0, index=tar_masked)
     tar_masked.masked_fill_(mask, mask_ind)
     res_masked.masked_fill_(mask, mask_ind)
