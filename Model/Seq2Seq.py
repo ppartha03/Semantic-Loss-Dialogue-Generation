@@ -15,14 +15,14 @@ parser.add_argument('--dataset', type=str, default="frames")
 parser.add_argument('--loss',type=str,default='combine') #nll, bert, combine, alternate
 parser.add_argument('--batch_size', type=int, default=8)
 parser.add_argument('--type', type=str, default='train')
-parser.add_argument('--alpha',type=float,default=0.1)
+parser.add_argument('--alpha',type=float,default=0.0)
 parser.add_argument('--toggle_loss',type=float, default = 0.5)
 parser.add_argument('--teacher_forcing', type=float, default=0.1)
 parser.add_argument('--change_nll_mask',type=bool, default=False)
 parser.add_argument('--save_base', type=str, default='..')
-parser.add_argument('--encoder_learning_rate', type=float, default=0.0001)
-parser.add_argument('--decoder_learning_rate', type=float, default=0.0001)
-parser.add_argument('--output_dropout',type=float,default = 0.95)
+parser.add_argument('--encoder_learning_rate', type=float, default=0.004)
+parser.add_argument('--decoder_learning_rate', type=float, default=0.004)
+parser.add_argument('--output_dropout',type=float,default = 0.0)
 parser.add_argument('--data_path', type=str, default="../Dataset")
 parser.add_argument('--save_every_epoch',type=bool,default=False)
 parser.add_argument('--reload',type=bool,default = False)
@@ -133,7 +133,7 @@ class Seq2Seq(nn.Module):
         for i in range(total_step):
             seq_loss_a = 0.
             batch_size = self.Data[i]['input'].shape[0]
-            hidden_enc = (torch.zeros(self.config['num_layers'], batch_size, self.config['hidden_size'], device=device), torch.zeros(self.config['num_layers'], batch_size, self.config['hidden_size'], device=device))
+            hidden_enc = (torch.zeros(self.config['num_layers'], batch_size, self.config['hidden_size'], device=self.config['device']), torch.zeros(self.config['num_layers'], batch_size, self.config['hidden_size'], device=self.config['device']))
 
             input_ = torch.from_numpy(self.Data[i]['input']).to(self.config['device']).view(batch_size,self.config['sequence_length'],self.config['input_size'])
             decoder_input = torch.from_numpy(self.Data[i]['target']).to(self.config['device']).view(batch_size,self.config['sequence_length'],self.config['input_size'])
@@ -172,12 +172,12 @@ class Seq2Seq(nn.Module):
             res = torch.cat(response_, dim=1)
             tar = torch.cat(target_response, dim=1)
 
-            loss = seq_loss_a/batch_size/config['sequence_length']
-            loss_inf += seq_loss_a.item()/batch_size/config['sequence_length']
+            loss = seq_loss_a/batch_size/self.Data[i]['decoder_length']
+            loss_inf += seq_loss_a.item()/batch_size/self.Data[i]['decoder_length']
 
             # mask_ind here corresponds to the index of the <pad> word
-            res_masked, tar_masked = Mask_sentence(res, tar, config['weights'], mask_ind=config['pad_index'], device=device)
-            loss_bert = Bert_loss(self.Bert_embedding(res_masked), self.Bert_embedding(tar_masked))
+            res_masked = Mask_sentence(res, config['weights'], mask_ind=config['pad_index'], device=self.config['device'])
+            loss_bert = Bert_loss(self.Bert_embedding(res_masked), self.Bert_embedding(tar))
 
             if type_ == 'valid':
                 for c_index in range(con.shape[0]):
@@ -199,7 +199,7 @@ class Seq2Seq(nn.Module):
                 elif args.loss == 'bert':
                     train_loss = reinforce_loss
                 elif args.loss == 'combine':
-                    train_loss = args.alpha * reinforce_loss + (1.0 - args.alpha) * loss
+                    train_loss = config['alpha']  * reinforce_loss + (1.0 - config['alpha']) * loss
                 elif args.loss == 'alternate':
                     if torch.rand(1) < args.toggle_loss:
                         train_loss = loss
