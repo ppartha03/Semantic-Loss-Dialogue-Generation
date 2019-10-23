@@ -15,7 +15,7 @@ parser.add_argument('--dataset', type=str, default="frames")
 parser.add_argument('--loss',type=str,default='nll') #nll, bert, combine, alternate
 parser.add_argument('--batch_size', type=int, default=32)
 parser.add_argument('--type', type=str, default='train')
-parser.add_argument('--alpha',type=float,default=0.001)
+parser.add_argument('--alpha',type=float,default=0.1)
 parser.add_argument('--toggle_loss',type=float, default = 0.5)
 parser.add_argument('--teacher_forcing', type=float, default=0.1)
 parser.add_argument('--change_nll_mask',type=str, default="False")
@@ -23,8 +23,8 @@ parser.add_argument('--save_base', type=str, default='.')
 parser.add_argument('--encoder_learning_rate', type=float, default=0.004)
 parser.add_argument('--decoder_learning_rate', type=float, default=0.004)
 parser.add_argument('--data_path', type=str, default="../Dataset")
-parser.add_argument('--reload',type=bool,default = False)
-parser.add_argument('--output_dropout',type=float,default = 0.95)
+parser.add_argument('--reload',type=str,default = "False")
+parser.add_argument('--output_dropout',type=float,default = 0.0)
 args = parser.parse_args()
 
 save_path = os.path.join(args.save_base, 'MetaDial')
@@ -81,13 +81,12 @@ config['input_size'] = config['data'].vlen
 config['hidden_size'] = args.hidden_size
 config['num_layers'] = 1
 config['output_size'] = config['data'].vlen
-config['num_epochs'] = 10000
+config['num_epochs'] = 1000
 config['output_dropout'] = args.output_dropout
 config['change_nll_mask'] = eval(args.change_nll_mask)
 config['decoder_learning_rate'] = args.decoder_learning_rate
 config['encoder_learning_rate'] = args.encoder_learning_rate
 config['batch_size'] = args.batch_size
-config['pad_index'] = 1 #change to 3 when the bert embeddings are updated and the newly generated embeddings are used
 config['alpha'] = args.alpha
 config['loss'] = args.loss
 config['dataset'] = args.dataset
@@ -138,11 +137,6 @@ class Seq2Seq(nn.Module):
             context_ = []
             target_response = []
             # Generate random masks
-            if args.type == 'train' and config['output_dropout'] > 0:
-                weight_random = np.random.random(len(config['weights'])-4) > config['output_dropout']
-                config['weights'] = np.hstack([config['weights'][:4],weight_random.astype(int)])
-                if config['change_nll_mask']:
-                    self.criterion = nn.NLLLoss(weight = torch.from_numpy(config['weights']).float()).to(device)
 
             for di in range(self.Data[i]['encoder_length']):
                 o_v, o_e, hidden_enc, out = self.Encoder(input_[:,di,:].view(-1,1,self.config['input_size']),hidden_enc)
@@ -166,15 +160,19 @@ class Seq2Seq(nn.Module):
             con = torch.cat(context_, dim=1)
             res = torch.cat(response_, dim=1)
             tar = torch.cat(target_response, dim=1)
-            print(tar)
 
-            loss = seq_loss_a/batch_size/config['sequence_length']
-            loss_inf += seq_loss_a.item()/batch_size/config['sequence_length']
+
+            loss = seq_loss_a/batch_size/self.Data[i]['decoder_length']
+            loss_inf += seq_loss_a.item()/batch_size/self.Data[i]['decoder_length']
 
             # mask_ind here corresponds to the index of the <pad> word
-            res_masked, tar_masked = Mask_sentence(res, tar, config['weights'], mask_ind=config['pad_index'])
-            loss_bert = Bert_loss(self.Bert_embedding(res_masked), self.Bert_embedding(tar_masked))
-
+            if args.type == 'train' and config['output_dropout'] > 0:
+                weight_random = np.random.random(len(config['weights'])-4) > config['output_dropout']
+                config['weights'] = np.hstack([config['weights'][:4],weight_random.astype(int)])
+                if config['change_nll_mask']:
+                    self.criterion = nn.NLLLoss(weight = torch.from_numpy(config['weights']).float()).to(device)
+            res_masked = Mask_sentence(res, config['weights'], mask_ind=config['pad_index'])
+            loss_bert = Bert_loss(self.Bert_embedding(res_masked), self.Bert_embedding(tar))
             if type_ == 'valid':
                 for c_index in range(con.shape[0]):
                     c = ' '.join([self.Data.Vocab_inv[idx.item()] for idx in con[c_index]])
@@ -187,13 +185,14 @@ class Seq2Seq(nn.Module):
                 dec = torch.cat(dec_list,dim = 1)
 
                 #reinforce_loss
-                R = loss_bert.view(-1,1,1).repeat(1,self.Data[i]['decoder_length']-1,config['input_size'])#.view(batch_size,self.Data[i]['decoder_length'],config['input_size'])
-                reinforce_loss = torch.sum(-torch.mul(dec,R))
-
+                #R = loss_bert.view(-1,1,1).repeat(1,self.Data[i]['decoder_length']-1,config['input_size'])#.view(batch_size,self.Data[i]['decoder_length'],config['input_size'])
+                #R = (R - R.mean(dim = 0))**2 / (R.std() + 1e-6)
+                #print(R.shape)
+                reinforce_loss = torch.mean(-torch.mul(dec,loss_bert))
                 if args.loss == 'nll':
                     train_loss = loss
                 elif args.loss == 'bert':
-                    train_loss = reinforce_loss
+                    train_loss =  reinforce_loss
                 elif args.loss == 'combine':
                     train_loss = args.alpha * reinforce_loss + (1.0 - args.alpha) * loss
                 elif args.loss == 'alternate':
@@ -207,9 +206,9 @@ class Seq2Seq(nn.Module):
 
         if type_ == 'eval':
             self.writer.add_scalar('Loss/LM_Loss_eval', loss_inf, ep)
+
         if type == 'train':
             self.writer.add_scalar('Loss/LM_Loss_train', loss_inf, ep)
-
 
 
 if __name__ == '__main__':
@@ -222,16 +221,16 @@ if __name__ == '__main__':
     Data_train.setBatchSize(config['batch_size'])
 
     Model = Seq2Seq(config)
-    if args.reload:
+    if eval(args.reload):
         Model.load_state_dict(torch.load(os.path.join(saved_models, config['id'])))
     if args.type == 'train':
         Data_valid.setBatchSize(config['batch_size'])
         for epoch in range(config['num_epochs']):
             print(epoch,'/',config['num_epochs'])
             saver = open(fname,'a')
-            Model.modelrun(Data = Data_train, type_ = 'train', total_step = 1 , ep = epoch,sample_saver = None,saver = saver)
+            Model.modelrun(Data = Data_train, type_ = 'train', total_step = Data_train.num_batches , ep = epoch,sample_saver = None,saver = saver)
             torch.save(Model.state_dict(), os.path.join(saved_models, config['id']))
-            #Model.modelrun(Data = Data_valid, type_ = 'eval', total_step = Data_valid.num_batches , ep = epoch,sample_saver = None,saver = saver)
+            Model.modelrun(Data = Data_valid, type_ = 'eval', total_step = Data_valid.num_batches , ep = epoch,sample_saver = None,saver = saver)
     elif args.type == 'valid':
             sample_saver = open(samples_fname+config['id']+'.txt','w')
             sample_saver = open(samples_fname+config['id']+'.txt','a')
