@@ -12,22 +12,22 @@ parser = argparse.ArgumentParser()
 #parser.add_argument('--task')
 parser.add_argument('--hidden_size', type=int, default=256)
 parser.add_argument('--dataset', type=str, default="frames")
-parser.add_argument('--loss',type=str,default='combine') #nll, bert, combine, alternate
+parser.add_argument('--loss',type=str, default='combine') #nll, bert, combine, alternate
 parser.add_argument('--batch_size', type=int, default=8)
 parser.add_argument('--type', type=str, default='train')
-parser.add_argument('--alpha',type=float,default=0.0)
-parser.add_argument('--toggle_loss',type=float, default = 0.5)
+parser.add_argument('--alpha',type=float, default=0.0)
+parser.add_argument('--toggle_loss',type=float, default=0.5)
 parser.add_argument('--teacher_forcing', type=float, default=0.1)
-parser.add_argument('--change_nll_mask',type=bool, default=False)
+parser.add_argument('--change_nll_mask', action='store_true')
 parser.add_argument('--save_base', type=str, default='..')
 parser.add_argument('--encoder_learning_rate', type=float, default=0.004)
 parser.add_argument('--decoder_learning_rate', type=float, default=0.004)
-parser.add_argument('--output_dropout',type=float,default = 0.0)
+parser.add_argument('--output_dropout', type=float,default=0.0)
 parser.add_argument('--data_path', type=str, default="../Dataset")
-parser.add_argument('--save_every_epoch',type=bool,default=False)
-parser.add_argument('--reload',type=bool,default = False)
-parser.add_argument('--start_epoch',type=int,default = 0)
-parser.add_argument('--num_epochs',type=int,default = 100)
+parser.add_argument('--save_every_epoch', action='store_true')
+parser.add_argument('--reload', action='store_true')
+parser.add_argument('--start_epoch', type=int, default=-1)
+parser.add_argument('--num_epochs', type=int, default=100)
 args = parser.parse_args()
 
 save_path = os.path.join(args.save_base, 'MetaDial')
@@ -90,7 +90,6 @@ config['change_nll_mask'] = args.change_nll_mask
 config['decoder_learning_rate'] = args.decoder_learning_rate
 config['encoder_learning_rate'] = args.encoder_learning_rate
 config['batch_size'] = args.batch_size
-config['pad_index'] = 1 #change to 3 when the bert embeddings are updated and the newly generated embeddings are used
 config['alpha'] = args.alpha
 config['loss'] = args.loss
 config['dataset'] = args.dataset
@@ -111,22 +110,23 @@ class Seq2Seq(nn.Module):
         #Encoder_model can be s2s or hred
         self.Data = config['data']
         self.config = config
-        self.Encoder = EncoderRNN(self.config['input_size'], self.config['hidden_size'], self.config['num_layers'],num_edges = self.Data.elen, num_vertices = self.Data.vlen,).to(self.config['device'])
+        self.Encoder = EncoderRNN(self.config['input_size'], self.config['hidden_size'], self.config['num_layers'],num_edges=self.Data.elen, num_vertices=self.Data.vlen,).to(self.config['device'])
         self.Decoder = DecoderRNN(self.config['hidden_size'], self.config['output_size'], self.config['input_size'], self.config['num_layers']).to(self.config['device'])
-        _ , self.weights = Load_embeddings(config['dataset'], )
+        _, self.weights = Load_embeddings(config['dataset'], )
         self.Bert_embedding = nn.Embedding.from_pretrained(self.weights, freeze=True).to(self.config['device'])
         # Loss and optimizer
-        self.criterion = nn.NLLLoss(weight = torch.from_numpy(config['weights']).float()).to(self.config['device'])
+        self.criterion = nn.NLLLoss(weight=torch.from_numpy(config['weights']).float()).to(self.config['device'])
         # criterion_2 = nn.CrossEntropyLoss().to(self.config['device'])
 
-        self.optimizer = torch.optim.RMSprop(self.Encoder.parameters(), lr = config['encoder_learning_rate'],alpha=0.99, eps=1e-08, weight_decay=0, momentum=0, centered=False)
+        self.optimizer = torch.optim.RMSprop(self.Encoder.parameters(), lr=config['encoder_learning_rate'],alpha=0.99, eps=1e-08, weight_decay=0, momentum=0, centered=False)
         self.optimizer_dec = torch.optim.Adam(self.Decoder.parameters(), lr =config['decoder_learning_rate'])
         self.Opts = [self.optimizer, self.optimizer_dec]
 
         self.writer = SummaryWriter(config['tensorboard_path'])
 
-    def modelrun(self, Data = '', type_ = 'train', total_step = 200, ep = 0, sample_saver = '', saver = ''):
-        loss_inf = 0.
+    def modelrun(self, Data='', type_='train', total_step=200, ep=0, sample_saver='', saver=''):
+        loss_mle_inf = 0.
+        loss_bert_inf = 0.
         self.Data = Data
         self.sample_saver = sample_saver
 
@@ -163,7 +163,7 @@ class Seq2Seq(nn.Module):
                     decoder_input_ = decoder_output.view(-1,1,self.config['input_size'])
                 else:
                     decoder_input_ = decoder_input[:,di+1,:].view(-1,1,self.config['input_size'])
-                seq_loss_a += self.criterion(input = decoder_output[:,-1,:], target = torch.max(decoder_input[:,di+1,:], dim = 1)[-1])
+                seq_loss_a += self.criterion(input=decoder_output[:,-1,:], target=torch.max(decoder_input[:,di+1,:], dim=1)[-1])
                 dec_list+=[decoder_output.view(-1,1,self.config['input_size'])]
                 #if type_ == 'valid':
                 target_response = target_response + [torch.argmax(decoder_input[:,di,:].view(batch_size,-1),dim =1).view(-1,1)]
@@ -173,11 +173,12 @@ class Seq2Seq(nn.Module):
             tar = torch.cat(target_response, dim=1)
 
             loss = seq_loss_a/batch_size/self.Data[i]['decoder_length']
-            loss_inf += seq_loss_a.item()/batch_size/self.Data[i]['decoder_length']
+            loss_mle_inf += seq_loss_a.item()/batch_size/self.Data[i]['decoder_length']
 
             # mask_ind here corresponds to the index of the <pad> word
             res_masked = Mask_sentence(res, config['weights'], mask_ind=config['pad_index'], device=self.config['device'])
             loss_bert = Bert_loss(self.Bert_embedding(res_masked), self.Bert_embedding(tar))
+            loss_bert_inf += torch.sum(loss_bert).item()/batch_size
 
             if type_ == 'valid':
                 for c_index in range(con.shape[0]):
@@ -188,7 +189,7 @@ class Seq2Seq(nn.Module):
             if type_ == 'train':
                 self.optimizer.zero_grad()
                 self.optimizer_dec.zero_grad()
-                dec = torch.cat(dec_list,dim = 1)
+                dec = torch.cat(dec_list,dim=1)
 
                 #reinforce_loss
                 R = loss_bert.view(-1,1,1).repeat(1,self.Data[i]['decoder_length']-1,config['input_size'])#.view(batch_size,self.Data[i]['decoder_length'],config['input_size'])
@@ -210,9 +211,12 @@ class Seq2Seq(nn.Module):
                     O_.step()
 
         if type_ == 'eval':
-            self.writer.add_scalar('Loss/LM_Loss_eval', loss_inf, ep)
-        if type == 'train':
-            self.writer.add_scalar('Loss/LM_Loss_train', loss_inf, ep)
+            self.writer.add_scalar('Loss/Loss_MLE_eval', loss_mle_inf, ep)
+            self.writer.add_scalar('Loss/Loss_Bert_eval', loss_bert_inf, ep)
+        if type_ == 'train':
+            self.writer.add_scalar('Loss/Loss_MLE_train', loss_mle_inf, ep)
+            self.writer.add_scalar('Loss/Loss_Bert_train', loss_bert_inf, ep)
+
 
 
 
@@ -226,25 +230,28 @@ if __name__ == '__main__':
     Data_train.setBatchSize(config['batch_size'])
 
     Model = Seq2Seq(config)
-    if args.reload and args.start_epoch != 0:
+    if args.reload and args.start_epoch != -1:
         Model.load_state_dict(torch.load(os.path.join(saved_models, config['id'] + '_' + str(args.start_epoch))))
-    elif args.reload :
+    elif args.reload:
         Model.load_state_dict(torch.load(os.path.join(saved_models, config['id'])))
     if args.type == 'train':
         Data_valid.setBatchSize(config['batch_size'])
         if not args.reload:
-            args.start_epoch = 0
-        for epoch in range(args.start_epoch, config['num_epochs']):
+            args.start_epoch = -1
+        for epoch in range(args.start_epoch+1, config['num_epochs']):
             print(epoch,'/',config['num_epochs'])
             saver = open(fname,'a')
-            Model.modelrun(Data = Data_train, type_ = 'train', total_step = Data_train.num_batches , ep = epoch,sample_saver = None,saver = saver)
+            Model.modelrun(Data=Data_train, type_='train', total_step=Data_train.num_batches, ep=epoch,
+                           sample_saver=None,saver=saver)
             torch.save(Model.state_dict(), os.path.join(saved_models, config['id']))
             if config['save_every_epoch']:
                 torch.save(Model.state_dict(), os.path.join(saved_models, config['id'] + '_' + str(epoch)))
-            Model.modelrun(Data = Data_valid, type_ = 'eval', total_step = Data_valid.num_batches , ep = epoch,sample_saver = None,saver = saver)
+            Model.modelrun(Data=Data_valid, type_='eval', total_step=Data_valid.num_batches, ep=epoch,
+                           sample_saver=None,saver=saver)
     elif args.type == 'valid':
             sample_saver = open(samples_fname+config['id']+'.txt','w')
             sample_saver = open(samples_fname+config['id']+'.txt','a')
             Model.load_state_dict(torch.load(os.path.join(saved_models, config['id'])))
-            Model.modelrun(Data = Data_valid, type_ = 'valid', total_step = Data_valid.num_batches, ep = 0,sample_saver = sample_saver,saver = saver)
+            Model.modelrun(Data=Data_valid, type_='valid', total_step=Data_valid.num_batches, ep=0,
+                           sample_saver=sample_saver, saver=saver)
 
