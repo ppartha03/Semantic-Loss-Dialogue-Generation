@@ -10,7 +10,7 @@ sys.path.append('../Utils/')
 
 parser = argparse.ArgumentParser()
 #parser.add_argument('--task')
-parser.add_argument('--hidden_size', type=int, default=256)
+parser.add_argument('--hidden_size', type=int, default=128)
 parser.add_argument('--dataset', type=str, default="frames")
 parser.add_argument('--loss',type=str, default='combine') #nll, bert, combine, alternate
 parser.add_argument('--batch_size', type=int, default=8)
@@ -110,7 +110,7 @@ class Seq2Seq(nn.Module):
         #Encoder_model can be s2s or hred
         self.Data = config['data']
         self.config = config
-        self.Encoder = EncoderRNN(self.config['input_size'], self.config['hidden_size'], self.config['num_layers'],num_edges=self.Data.elen, num_vertices=self.Data.vlen,).to(self.config['device'])
+        self.Encoder = EncoderRNN(self.config['input_size'], self.config['hidden_size'], self.config['num_layers']).to(self.config['device'])
         self.Decoder = DecoderRNN(self.config['hidden_size'], self.config['output_size'], self.config['input_size'], self.config['num_layers']).to(self.config['device'])
         _, self.weights = Load_embeddings(config['dataset'], )
         self.Bert_embedding = nn.Embedding.from_pretrained(self.weights, freeze=True).to(self.config['device'])
@@ -145,7 +145,7 @@ class Seq2Seq(nn.Module):
             # Generate random masks
 
             for di in range(self.Data[i]['encoder_length']):
-                o_v, o_e, hidden_enc, out = self.Encoder(input_[:,di,:].view(-1,1,self.config['input_size']),hidden_enc)
+                hidden_enc, out = self.Encoder(input_[:,di,:].view(-1,1,self.config['input_size']),hidden_enc)
                 context_ = context_ + [torch.argmax(input_[:,di,:].view(batch_size,-1),dim =1).view(-1,1)]
             decoder_hidden = hidden_enc
 
@@ -160,7 +160,6 @@ class Seq2Seq(nn.Module):
                     decoder_input_ = decoder_input[:,di+1,:].view(-1,1,self.config['input_size'])
                 seq_loss_a += self.criterion(input=decoder_output[:,-1,:], target=torch.max(decoder_input[:,di+1,:], dim=1)[-1])
                 dec_list+=[decoder_output.view(-1,1,self.config['input_size'])]
-                #if type_ == 'valid':
                 target_response = target_response + [torch.argmax(decoder_input[:,di,:].view(batch_size,-1),dim =1).view(-1,1)]
                 response_ = response_ + [torch.argmax(decoder_output.view(batch_size,-1),dim =1).view(-1,1)]
             con = torch.cat(context_, dim=1)
@@ -168,7 +167,7 @@ class Seq2Seq(nn.Module):
             tar = torch.cat(target_response, dim=1)
 
             loss = seq_loss_a/batch_size/self.Data[i]['decoder_length']
-            loss_mle_inf += seq_loss_a.item()/batch_size/self.Data[i]['decoder_length']
+            loss_mle_inf += loss.item()/total_step#seq_loss_a.item()/batch_size/self.Data[i]['decoder_length']
 
             # mask_ind here corresponds to the index of the <pad> word
             if args.type == 'train' and config['output_dropout'] > 0:
@@ -247,12 +246,9 @@ if __name__ == '__main__':
             torch.save(Model.state_dict(), os.path.join(saved_models, config['id']))
             if config['save_every_epoch']:
                 torch.save(Model.state_dict(), os.path.join(saved_models, config['id'] + '_' + str(epoch)))
-            Model.modelrun(Data=Data_valid, type_='eval', total_step=Data_valid.num_batches, ep=epoch,
-                           sample_saver=None,saver=saver)
+            Model.modelrun(Data=Data_valid, type_='eval', total_step=Data_valid.num_batches, ep=epoch,sample_saver=None,saver=saver)
     elif args.type == 'valid':
             sample_saver = open(samples_fname+config['id']+'.txt','w')
             sample_saver = open(samples_fname+config['id']+'.txt','a')
             Model.load_state_dict(torch.load(os.path.join(saved_models, config['id'])))
-            Model.modelrun(Data=Data_valid, type_='valid', total_step=Data_valid.num_batches, ep=0,
-                           sample_saver=sample_saver, saver=saver)
-
+            Model.modelrun(Data=Data_valid, type_='valid', total_step=Data_valid.num_batches, ep=0,sample_saver=sample_saver, saver=saver)
