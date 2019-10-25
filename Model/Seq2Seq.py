@@ -28,6 +28,8 @@ parser.add_argument('--save_every_epoch', action='store_true')
 parser.add_argument('--reload', action='store_true')
 parser.add_argument('--start_epoch', type=int, default=-1)
 parser.add_argument('--num_epochs', type=int, default=100)
+parser.add_argument('--seed', type=int, default=100)
+parser.add_argument('--no_posteos_mask', action='store_true')
 args = parser.parse_args()
 
 save_path = os.path.join(args.save_base, 'MetaDial')
@@ -71,6 +73,9 @@ config['data_path'] = args.data_path
 config['save_path'] = save_path
 config['tensorboard_path'] = tensorboard_path
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+config['seed'] = args.seed
+torch.manual_seed(config['seed'])
+np.random.seed(config['seed'])
 
 if args.dataset == 'mwoz':
     config['data'] = WoZGraphDataset(Data_dir=config['data_path'] + '/MULTIWOZ2/')
@@ -95,10 +100,12 @@ config['loss'] = args.loss
 config['dataset'] = args.dataset
 config['device'] = device
 config['save_every_epoch'] = args.save_every_epoch
-config['id'] = '{}_{}_{}_{}_{}_{}_{}_{}_{}'.format(args.dataset,args.hidden_size,args.encoder_learning_rate,args.decoder_learning_rate,args.loss,args.alpha,args.toggle_loss,args.output_dropout,args.change_nll_mask)
+config['no_posteos_mask'] = args.no_posteos_mask
+config['id'] = '{}_{}_{}_{}_{}_{}_{}_{}_{}_{}'.format(args.dataset,args.hidden_size,args.encoder_learning_rate,args.decoder_learning_rate,args.loss,args.alpha,args.toggle_loss,args.output_dropout,args.change_nll_mask, args.no_posteos_mask)
 
 config['weights'] = np.hstack([np.array([1,1,1,0]),np.ones(config['input_size']-4)])
 config['pad_index'] = 3
+config['eos_index'] = 1
 # 1 => account for loss
 # 0 => mask the token
 # embedding matrix Nxd
@@ -122,7 +129,7 @@ class Seq2Seq(nn.Module):
         self.optimizer_dec = torch.optim.Adam(self.Decoder.parameters(), lr =config['decoder_learning_rate'])
         self.Opts = [self.optimizer, self.optimizer_dec]
 
-        self.writer = SummaryWriter(config['tensorboard_path'])
+        self.writer = SummaryWriter(os.path.join(config['tensorboard_path'], config['id']))
 
     def modelrun(self, Data='', type_='train', total_step=200, ep=0, sample_saver='', saver=''):
         loss_mle_inf = 0.
@@ -175,9 +182,9 @@ class Seq2Seq(nn.Module):
                 config['weights'] = np.hstack([config['weights'][:4],weight_random.astype(int)])
                 if config['change_nll_mask']:
                     self.criterion = nn.NLLLoss(weight = torch.from_numpy(config['weights']).float()).to(device)
-            res_masked = Mask_sentence(res, config['weights'], mask_ind=config['pad_index'], device=config['device'])
+            res_masked = Mask_sentence(res, config['weights'], config)
             loss_bert = Bert_loss(self.Bert_embedding(res_masked), self.Bert_embedding(tar))
-            loss_bert_inf += loss_bert.item()//total_step
+            loss_bert_inf += loss_bert.item()/total_step
 
             if type_ == 'valid':
                 for c_index in range(con.shape[0]):
