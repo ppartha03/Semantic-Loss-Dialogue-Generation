@@ -33,10 +33,18 @@ def Metrics(file_loc):
     while i<len(D):
         tar = D[i+2].split()[2:]
         mod = D[i+1].split()[1:]
-        ind = tar.index('<eos>')
-        r_scores = R.get_scores(' '.join(mod[:ind]),' '.join(tar[:ind]))
-        sent_bleu += bleu_met([mod],tar,(0.5,0.5))
-        meteor_s += meteor_score([' '.join(mod[:ind])],' '.join(tar[:ind]))
+
+        if '<eos>' in tar:
+            ind_tar = tar.index('<eos>')
+        else:
+            ind_tar = -1
+        if '<eos>' in mod:
+            ind_mod = mod.index('<eos>')
+        else:
+            ind_mod = -1
+        r_scores = R.get_scores(' '.join(mod[:ind_mod]),' '.join(tar[:ind_tar]))
+        sent_bleu += bleu_met([mod[:ind_mod]],tar[:ind_tar],(0.5,0.5))
+        meteor_s += meteor_score([' '.join(mod[:ind_mod])],' '.join(tar[:ind_tar]))
         r_pre += r_scores[0]['rouge-l']['p']
         r_rec += r_scores[0]['rouge-l']['r']
         r_f1 += r_scores[0]['rouge-l']['f']

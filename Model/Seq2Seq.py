@@ -143,11 +143,6 @@ class Seq2Seq(nn.Module):
             context_ = []
             target_response = []
             # Generate random masks
-            if args.type == 'train' and config['output_dropout'] > 0:
-                weight_random = np.random.random(len(config['weights'])-4) > config['output_dropout']
-                config['weights'] = np.hstack([config['weights'][:4],weight_random.astype(int)])
-                if config['change_nll_mask']:
-                    self.criterion = nn.NLLLoss(weight = torch.from_numpy(config['weights']).float()).to(self.config['device'])
 
             for di in range(self.Data[i]['encoder_length']):
                 o_v, o_e, hidden_enc, out = self.Encoder(input_[:,di,:].view(-1,1,self.config['input_size']),hidden_enc)
@@ -176,7 +171,12 @@ class Seq2Seq(nn.Module):
             loss_mle_inf += seq_loss_a.item()/batch_size/self.Data[i]['decoder_length']
 
             # mask_ind here corresponds to the index of the <pad> word
-            res_masked = Mask_sentence(res, config['weights'], mask_ind=config['pad_index'], device=self.config['device'])
+            if args.type == 'train' and config['output_dropout'] > 0:
+                weight_random = np.random.random(len(config['weights'])-4) > config['output_dropout']
+                config['weights'] = np.hstack([config['weights'][:4],weight_random.astype(int)])
+                if config['change_nll_mask']:
+                    self.criterion = nn.NLLLoss(weight = torch.from_numpy(config['weights']).float()).to(device)
+            res_masked = Mask_sentence(res, config['weights'], mask_ind=config['pad_index'])
             loss_bert = Bert_loss(self.Bert_embedding(res_masked), self.Bert_embedding(tar))
             loss_bert_inf += torch.sum(loss_bert).item()/batch_size
 
@@ -192,8 +192,10 @@ class Seq2Seq(nn.Module):
                 dec = torch.cat(dec_list,dim=1)
 
                 #reinforce_loss
-                R = loss_bert.view(-1,1,1).repeat(1,self.Data[i]['decoder_length']-1,config['input_size'])#.view(batch_size,self.Data[i]['decoder_length'],config['input_size'])
-                reinforce_loss = torch.sum(-torch.mul(dec,R))
+                #R = loss_bert.view(-1,1,1).repeat(1,self.Data[i]['decoder_length']-1,config['input_size'])#.view(batch_size,self.Data[i]['decoder_length'],config['input_size'])
+                #R = (R - R.mean(dim = 0))**2 / (R.std() + 1e-6)
+                #print(R.shape)
+                reinforce_loss = torch.mean(-torch.mul(dec,loss_bert))
 
                 if args.loss == 'nll':
                     train_loss = loss
@@ -216,7 +218,6 @@ class Seq2Seq(nn.Module):
         if type_ == 'train':
             self.writer.add_scalar('Loss/Loss_MLE_train', loss_mle_inf, ep)
             self.writer.add_scalar('Loss/Loss_Bert_train', loss_bert_inf, ep)
-
 
 
 
