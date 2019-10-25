@@ -175,7 +175,7 @@ class Seq2Seq(nn.Module):
                 config['weights'] = np.hstack([config['weights'][:4],weight_random.astype(int)])
                 if config['change_nll_mask']:
                     self.criterion = nn.NLLLoss(weight = torch.from_numpy(config['weights']).float()).to(device)
-            res_masked = Mask_sentence(res, config['weights'], mask_ind=config['pad_index'])
+            res_masked = Mask_sentence(res, config['weights'], mask_ind=config['pad_index'], device=config['device'])
             loss_bert = Bert_loss(self.Bert_embedding(res_masked), self.Bert_embedding(tar))
             loss_bert_inf += loss_bert.item()//total_step
 
