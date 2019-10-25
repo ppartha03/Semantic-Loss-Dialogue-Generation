@@ -177,7 +177,7 @@ class Seq2Seq(nn.Module):
                     self.criterion = nn.NLLLoss(weight = torch.from_numpy(config['weights']).float()).to(device)
             res_masked = Mask_sentence(res, config['weights'], mask_ind=config['pad_index'])
             loss_bert = Bert_loss(self.Bert_embedding(res_masked), self.Bert_embedding(tar))
-            loss_bert_inf += torch.sum(loss_bert).item()/batch_size
+            loss_bert_inf += loss_bert.item()//total_step
 
             if type_ == 'valid':
                 for c_index in range(con.shape[0]):
