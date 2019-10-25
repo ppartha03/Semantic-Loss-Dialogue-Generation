@@ -42,7 +42,7 @@ def Mask_sentence(res, mask_, config):
     if not no_posteos_mask:
         posteos_mask = res == eos_ind
         indices = np.arange(res.shape[1])
-        indices = torch.from_numpy(indices)
+        indices = torch.from_numpy(indices).to(device)
         indices = indices.repeat(res.shape[0], 1)
         eos_positions = indices.masked_fill(~posteos_mask, 100000)
         eos_positions = torch.argmin(eos_positions, dim=1).unsqueeze(1).expand_as(indices)
