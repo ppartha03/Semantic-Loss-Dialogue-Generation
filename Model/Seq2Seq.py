@@ -183,7 +183,10 @@ class Seq2Seq(nn.Module):
                 dec_list+=[decoder_output.view(-1,1,self.config['input_size'])]
                 target_response = target_response + [torch.argmax(decoder_input[:,di,:].view(batch_size,-1),dim =1).view(-1,1)]
                 response_ = response_ + [torch.argmax(decoder_output.view(batch_size,-1),dim =1).view(-1,1)]
-                response_premasked = response_premasked + [torch.argmax(decoder_output.view(batch_size,-1).masked_fill(~mask, -10**6),dim =1).view(-1,1)]
+                if args.type == 'train':
+                    response_premasked = response_premasked + [torch.argmax(decoder_output.view(batch_size,-1).masked_fill(~mask, -10**6),dim =1).view(-1,1)]
+                else:
+                    response_premasked = response_
             con = torch.cat(context_, dim=1)
             res = torch.cat(response_, dim=1)
             res_premasked = torch.cat(response_premasked, dim=1)
