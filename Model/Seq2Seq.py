@@ -273,12 +273,16 @@ if __name__ == '__main__':
             loss_mle_valid = Model.modelrun(Data=Data_valid, type_='eval', total_step=Data_valid.num_batches, ep=epoch, sample_saver=None, saver=saver)
             if loss_mle_valid < config['best_mle_valid']:
                 config['best_mle_valid'] = loss_mle_valid
-                torch.save(Model.state_dict(), os.path.join(saved_models, config['id'] + '_best_mle_valid' ))
+                torch.save(Model.state_dict(), os.path.join(saved_models, config['id'] + '_best_mle_valid'))
     elif args.type == 'valid':
             sample_saver_valid = open(samples_fname+"_valid_"+config['id']+'.txt','w')
             sample_saver_valid = open(samples_fname+"_valid_"+config['id']+'.txt','a')
             sample_saver_train = open(samples_fname+"_train_"+config['id']+'.txt','w')
             sample_saver_train = open(samples_fname+"_train_"+config['id']+'.txt','a')
-            Model.load_state_dict(torch.load(os.path.join(saved_models, config['id'])))
+            #use the model with best validation nll loss for the baseline (without  bert loss)
+            if args.loss=='nll' or (args.loss=='combine' and args.alpha == 0) or (args.loss=='alternate' and args.toggle_loss == 1):
+                Model.load_state_dict(torch.load(os.path.join(saved_models, config['id'] + '_best_mle_valid')))
+            else:
+                Model.load_state_dict(torch.load(os.path.join(saved_models, config['id'])))
             Model.modelrun(Data=Data_train, type_='valid', total_step=Data_valid.num_batches, ep=0,sample_saver=sample_saver_train, saver=saver)
             Model.modelrun(Data=Data_valid, type_='valid', total_step=Data_valid.num_batches, ep=0,sample_saver=sample_saver_valid, saver=saver)
