@@ -104,6 +104,7 @@ config['device'] = device
 config['save_every_epoch'] = args.save_every_epoch
 config['posteos_mask'] = ~args.no_posteos_mask
 config['prebert_mask'] = ~args.no_prebert_mask
+config['best_mle_valid'] = 1000
 if config['prebert_mask']:
     config['id'] = '{}_preBertMask_{}_{}_{}_{}_{}_{}_{}_{}_{}'.format(args.dataset,args.hidden_size,args.encoder_learning_rate,args.decoder_learning_rate,args.loss,args.alpha,args.toggle_loss,args.output_dropout,args.change_nll_mask, args.no_posteos_mask)
 else:
@@ -142,7 +143,6 @@ class Seq2Seq(nn.Module):
         loss_bert_inf = 0.
         self.Data = Data
         self.sample_saver = sample_saver
-
         for i in range(total_step):
             seq_loss_a = 0.
             batch_size = self.Data[i]['input'].shape[0]
@@ -224,12 +224,12 @@ class Seq2Seq(nn.Module):
                 elif args.loss == 'bert':
                     train_loss = reinforce_loss
                 elif args.loss == 'combine':
-                    train_loss = config['alpha']  * reinforce_loss + (1.0 - config['alpha']) * loss
+                    train_loss = config['alpha'] * reinforce_loss + (1.0 - config['alpha']) * loss
                 elif args.loss == 'alternate':
                     if torch.rand(1) < args.toggle_loss:
                         train_loss = loss
                     else:
-                        train_loss = reinforce_loss
+                        train_loss = loss
                 train_loss.backward()
                 for O_ in self.Opts:
                     O_.step()
@@ -237,6 +237,7 @@ class Seq2Seq(nn.Module):
         if type_ == 'eval':
             self.writer.add_scalar('Loss/Loss_MLE_eval', loss_mle_inf, ep)
             self.writer.add_scalar('Loss/Loss_Bert_eval', loss_bert_inf, ep)
+            return loss_mle_inf
         if type_ == 'train':
             self.writer.add_scalar('Loss/Loss_MLE_train', loss_mle_inf, ep)
             self.writer.add_scalar('Loss/Loss_Bert_train', loss_bert_inf, ep)
@@ -265,11 +266,14 @@ if __name__ == '__main__':
             print(epoch,'/',config['num_epochs'])
             saver = open(fname,'a')
             Model.modelrun(Data=Data_train, type_='train', total_step=Data_train.num_batches, ep=epoch,
-                           sample_saver=None,saver=saver)
+                           sample_saver=None, saver=saver)
             torch.save(Model.state_dict(), os.path.join(saved_models, config['id']))
             if config['save_every_epoch']:
                 torch.save(Model.state_dict(), os.path.join(saved_models, config['id'] + '_' + str(epoch)))
-            Model.modelrun(Data=Data_valid, type_='eval', total_step=Data_valid.num_batches, ep=epoch,sample_saver=None,saver=saver)
+            loss_mle_valid = Model.modelrun(Data=Data_valid, type_='eval', total_step=Data_valid.num_batches, ep=epoch, sample_saver=None, saver=saver)
+            if loss_mle_valid < config['best_mle_valid']:
+                config['best_mle_valid'] = loss_mle_valid
+                torch.save(Model.state_dict(), os.path.join(saved_models, config['id'] + '_best_mle_valid' ))
     elif args.type == 'valid':
             sample_saver_valid = open(samples_fname+"_valid_"+config['id']+'.txt','w')
             sample_saver_valid = open(samples_fname+"_valid_"+config['id']+'.txt','a')
