@@ -229,7 +229,7 @@ class Seq2Seq(nn.Module):
                     if torch.rand(1) < args.toggle_loss:
                         train_loss = loss
                     else:
-                        train_loss = loss
+                        train_loss = reinforce_loss
                 train_loss.backward()
                 for O_ in self.Opts:
                     O_.step()
