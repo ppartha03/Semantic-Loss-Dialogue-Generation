@@ -2,11 +2,13 @@ from RNN import EncoderRNN, DecoderRNN, Q_predictor
 import sys
 import torch
 import torch.nn as nn
-from torch.utils.tensorboard import SummaryWriter
+# from torch.utils.tensorboard import SummaryWriter
 import numpy as np
 import argparse
 import os
 import logging
+import wandb
+import wandb
 sys.path.append('../Utils/')
 
 parser = argparse.ArgumentParser()
@@ -33,6 +35,9 @@ parser.add_argument('--seed', type=int, default=100)
 parser.add_argument('--no_posteos_mask', action='store_true') #if true, don't mask the words generated after the <eos> token
 #if true, don't apply the mask before generating the Bert sentence (allow the model to generate masked tokens, and then mask them during the embedding calculation)
 parser.add_argument('--no_prebert_mask', action='store_true')
+parser.add_argument('--wandb_project', default='metadial')
+parser.add_argument('--dont_use_best', action='store_true')
+
 args = parser.parse_args()
 
 save_path = os.path.join(args.save_base, 'MetaDial')
@@ -55,9 +60,9 @@ log_path = os.path.join(save_path, 'logs')
 if not os.path.exists(log_path):
     os.makedirs(log_path)
 
-tensorboard_path = os.path.join(save_path, 'tensorboard')
-if not os.path.exists(tensorboard_path):
-    os.makedirs(tensorboard_path)
+# tensorboard_path = os.path.join(save_path, 'tensorboard')
+# if not os.path.exists(tensorboard_path):
+#     os.makedirs(tensorboard_path)
 
 fname = os.path.join(result_path, 'Log.txt')
 samples_fname = os.path.join(result_path, 'Samples')
@@ -74,7 +79,8 @@ except:
 config = {}
 config['data_path'] = args.data_path
 config['save_path'] = save_path
-config['tensorboard_path'] = tensorboard_path
+# config['tensorboard_path'] = tensorboard_path
+config["wandb_project"] = args.wandb_project
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 config['seed'] = args.seed
 torch.manual_seed(config['seed'])
@@ -105,7 +111,7 @@ config['device'] = device
 config['save_every_epoch'] = args.save_every_epoch
 config['posteos_mask'] = ~args.no_posteos_mask
 config['prebert_mask'] = ~args.no_prebert_mask
-config['best_accuracy_valid'] = 0.0
+config['best_mle_valid'] = 0.0
 if config['prebert_mask']:
     config['id'] = '{}_preBertMask_{}_{}_{}_{}_{}_{}_{}_{}_{}'.format(args.dataset,args.hidden_size,args.encoder_learning_rate,args.decoder_learning_rate,args.loss,args.alpha,args.toggle_loss,args.output_dropout,args.change_nll_mask, args.no_posteos_mask)
 else:
@@ -138,13 +144,11 @@ class Seq2Seq(nn.Module):
         self.optimizer_dec = torch.optim.Adam(self.Decoder.parameters(), lr =config['decoder_learning_rate'])
         self.Opts = [self.optimizer, self.optimizer_dec]
 
-        self.writer = SummaryWriter(os.path.join(config['tensorboard_path'], config['id']))
+        # self.writer = SummaryWriter(os.path.join(config['tensorboard_path'], config['id']))
 
-    def modelrun(self, Data='', type_='train', total_step=200, ep=0, sample_saver='', saver=''):
+    def modelrun(self, Data='', type_='train', total_step=200, ep=0, sample_saver=''):
         loss_mle_inf = 0.
         loss_bert_inf = 0.
-        accuracy = 0
-        words_count = 0
 
         self.Data = Data
         self.sample_saver = sample_saver
@@ -190,11 +194,6 @@ class Seq2Seq(nn.Module):
                 target_response = target_response + [torch.argmax(decoder_input[:,di,:].view(batch_size,-1),dim =1).view(-1,1)]
                 response_ = response_ + [torch.argmax(decoder_output.view(batch_size,-1),dim =1).view(-1,1)]
 
-                #get accuracy
-                accuracy_mask = ~(target_response[-1] < 4)
-                accuracy += torch.sum(response_[-1].eq(target_response[-1]).masked_select(accuracy_mask)).item()
-                words_count += torch.sum(accuracy_mask).item()
-
                 if args.type == 'train':
                     response_premasked = response_premasked + [torch.argmax(decoder_output.view(batch_size,-1).masked_fill(~mask, -10**6),dim =1).view(-1,1)]
                 else:
@@ -214,7 +213,7 @@ class Seq2Seq(nn.Module):
                 loss_bert = Bert_loss(self.Bert_embedding(res_postmasked), self.Bert_embedding(tar))
             loss_bert_inf += loss_bert.item()/total_step
 
-            if type_ == 'valid':
+            if type_ == 'valid' or type_ == 'test':
                 for c_index in range(con.shape[0]):
                     c = ' '.join([self.Data.Vocab_inv[idx.item()] for idx in con[c_index]])
                     r = ' '.join([self.Data.Vocab_inv[idx.item()] for idx in res[c_index]])
@@ -248,20 +247,19 @@ class Seq2Seq(nn.Module):
 
         if type_ == 'eval':
             logging.info(
-                f"Train:   Loss_MLE_eval: {loss_mle_inf:.4f},  Loss_Bert_eval: {loss_bert_inf:.4f},  unmasked_accuracy_eval: {accuracy / words_count * 100:.2f}\n")
-            self.writer.add_scalar('Loss/Loss_MLE_eval', loss_mle_inf, ep)
-            self.writer.add_scalar('Loss/Loss_Bert_eval', loss_bert_inf, ep)
-            self.writer.add_scalar('Loss/unmasked_accuracy_eval', accuracy / words_count * 100, ep)
-            return accuracy / words_count
+                f"Train:   Loss_MLE_eval: {loss_mle_inf:.4f},  Loss_Bert_eval: {loss_bert_inf:.4f}\n")
+            wandb.log({'Loss_MLE_eval': loss_mle_inf, 'Loss_Bert_eval': loss_bert_inf}, step=ep)
+            return loss_mle_inf
         if type_ == 'train':
             logging.info(
-                f"Train:   Loss_MLE_train: {loss_mle_inf:.4f},  Loss_MLE_train: {loss_bert_inf:.4f},  unmasked_accuracy_train: {accuracy / words_count * 100:.2f}\n")
+                f"Train:   Loss_MLE_train: {loss_mle_inf:.4f},  Loss_MLE_train: {loss_bert_inf:.4f}\n")
+            wandb.log({'Loss_MLE_train': loss_mle_inf, 'Loss_Bert_train': loss_bert_inf}, step=ep)
             self.writer.add_scalar('Loss/Loss_MLE_train', loss_mle_inf, ep)
             self.writer.add_scalar('Loss/Loss_Bert_train', loss_bert_inf, ep)
-            self.writer.add_scalar('Loss/unmasked_accuracy_train', accuracy / words_count * 100, ep)
 
 
 if __name__ == '__main__':
+    logging.basicConfig(level=logging.INFO)
     if args.dataset == 'mwoz' and (args.type == 'train' or args.type == 'valid'):
         Data_train = WoZGraphDataset()
         Data_valid = WoZGraphDataset(suffix = 'valid')
@@ -280,40 +278,54 @@ if __name__ == '__main__':
         checkpoint = torch.load(os.path.join(saved_models, config['id'] + '_' + str(args.start_epoch)))
         Model.load_state_dict(checkpoint['model_state_dict'])
         config = checkpoint['config']
+
+    wandb.init(project=config["wandb_project"])
+    wandb.watch(Model)
+
     if args.type == 'train':
         Data_valid.setBatchSize(config['batch_size'])
         for epoch in range(config['epoch'], config['num_epochs']):
             logging.info(str(epoch) + '/' + str(config['num_epochs']))
-            saver = open(fname,'a')
             Model.modelrun(Data=Data_train, type_='train', total_step=Data_train.num_batches, ep=epoch,
-                           sample_saver=None, saver=saver)
+                           sample_saver=None)
             config['epoch'] += 1
             torch.save({'model_State_dict': Model.state_dict(), 'config': config}, os.path.join(saved_models, config['id'] + '_-1'))
             if config['save_every_epoch']:
                 torch.save({'model_State_dict': Model.state_dict(), 'config': config}, os.path.join(saved_models, config['id'] + '_' + str(epoch)))
-            loss_accuracy_valid = Model.modelrun(Data=Data_valid, type_='eval', total_step=Data_valid.num_batches, ep=epoch, sample_saver=None, saver=saver)
-            if loss_accuracy_valid > config['best_accuracy_valid']:
-                config['best_accuracy_valid'] = loss_accuracy_valid
-                torch.save({'model_State_dict': Model.state_dict(), 'config': config}, os.path.join(saved_models, config['id'] + '_best_accuracy_valid'))
+            loss_mle_valid = Model.modelrun(Data=Data_valid, type_='eval', total_step=Data_valid.num_batches, ep=epoch, sample_saver=None)
+            if loss_mle_valid < config['best_mle_valid']:
+                config['best_mle_valid'] = loss_mle_valid
+                torch.save({'model_State_dict': Model.state_dict(), 'config': config},
+                           os.path.join(saved_models, config['id'] + '_best_mle_valid'))
+                #save the best model to wandb
+                torch.save({'model_State_dict': Model.state_dict(), 'config': config},
+                           os.path.join(wandb.run.dir, config['id'] + '_best_mle_valid'))
 
     elif args.type == 'valid':
-            sample_saver_valid = open(samples_fname+"_valid_"+config['id']+'.txt','w')
-            sample_saver_valid = open(samples_fname+"_valid_"+config['id']+'.txt','a')
-            sample_saver_train = open(samples_fname+"_train_"+config['id']+'.txt','w')
-            sample_saver_train = open(samples_fname+"_train_"+config['id']+'.txt','a')
-            #use the model with best validation nll loss for the baseline (without  bert loss)
-            # if args.loss=='nll' or (args.loss=='combine' and args.alpha == 0) or (args.loss=='alternate' and args.toggle_loss == 1):
-            #     Model.load_state_dict(torch.load(os.path.join(saved_models, config['id'] + '_best_mle_valid')))
-            # else:
-            #     Model.load_state_dict(torch.load(os.path.join(saved_models, config['id'])))
-            checkpoint = torch.load(os.path.join(saved_models, config['id'] + '_best_accuracy_valid'))
-            Model.load_state_dict(checkpoint['model_state_dict'])
-            Model.modelrun(Data=Data_train, type_='valid', total_step=Data_valid.num_batches, ep=0,sample_saver=sample_saver_train, saver=saver)
-            Model.modelrun(Data=Data_valid, type_='valid', total_step=Data_valid.num_batches, ep=0,sample_saver=sample_saver_valid, saver=saver)
+        if args.dont_use_best:
+            sample_saver_valid = open(samples_fname + "_valid_" + config['id'] + '_' + str(args.start_epoch) + '.txt', 'w')
+            sample_saver_valid = open(samples_fname + "_valid_" + config['id'] + '_' + str(args.start_epoch) + '.txt', 'a')
+            # sample_saver_train = open(samples_fname + "_train_" + config['id'] + '_' + str(args.start_epoch), 'w')
+            # sample_saver_train = open(samples_fname + "_train_" + config['id'] + '_' + str(args.start_epoch), 'a')
+            checkpoint = torch.load(os.path.join(saved_models, config['id'] + '_' + str(args.start_epoch)))
+        else:
+            sample_saver_valid = open(samples_fname + "_valid_" + config['id'] + '_best_model.txt', 'w')
+            sample_saver_valid = open(samples_fname + "_valid_" + config['id'] + '_best_model.txt', 'a')
+            # sample_saver_train = open(samples_fname + "_train_" + config['id'] + '_best_model.txt', 'w')
+            # sample_saver_train = open(samples_fname + "_train_" + config['id'] + '_best_model.txt', 'a')
+            checkpoint = torch.load(os.path.join(saved_models, config['id'] + '_best_mle_valid'))
+        Model.load_state_dict(checkpoint['model_state_dict'])
+        # Model.modelrun(Data=Data_train, type_='valid', total_step=Data_valid.num_batches, ep=0,sample_saver=sample_saver_train)
+        Model.modelrun(Data=Data_valid, type_='valid', total_step=Data_valid.num_batches, ep=0,sample_saver=sample_saver_valid)
 
     elif args.type == 'test':
-            sample_saver_test = open(samples_fname+"_test_"+config['id']+'.txt','w')
-            sample_saver_test = open(samples_fname+"_test_"+config['id']+'.txt','a')
-            checkpoint = torch.load(os.path.join(saved_models, config['id'] + '_best_accuracy_valid'))
-            Model.load_state_dict(checkpoint['model_state_dict'])
-            Model.modelrun(Data=Data_test, type_='valid', total_step=Data_test.num_batches, ep=0,sample_saver=sample_saver_test, saver=saver)
+        if args.dont_use_best:
+            sample_saver_test = open(samples_fname+"_test_"+config['id'] + '_' + str(args.start_epoch) + '.txt','w')
+            sample_saver_test = open(samples_fname+"_test_"+config['id'] + '_' + str(args.start_epoch) + '.txt','a')
+            checkpoint = torch.load(os.path.join(saved_models, config['id'] + '_' + str(args.start_epoch)))
+        else:
+            sample_saver_test = open(samples_fname + "_test_" + config['id'] + '_best_model.txt', 'w')
+            sample_saver_test = open(samples_fname + "_test_" + config['id'] + '_best_model.txt', 'a')
+            checkpoint = torch.load(os.path.join(saved_models, config['id'] + '_best_mle_valid'))
+        Model.load_state_dict(checkpoint['model_state_dict'])
+        Model.modelrun(Data=Data_test, type_='valid', total_step=Data_test.num_batches, ep=0,sample_saver=sample_saver_test)
