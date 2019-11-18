@@ -254,8 +254,6 @@ class Seq2Seq(nn.Module):
             logging.info(
                 f"Train:   Loss_MLE_train: {loss_mle_inf:.4f},  Loss_MLE_train: {loss_bert_inf:.4f}\n")
             wandb.log({'Loss_MLE_train': loss_mle_inf, 'Loss_Bert_train': loss_bert_inf}, step=ep)
-            self.writer.add_scalar('Loss/Loss_MLE_train', loss_mle_inf, ep)
-            self.writer.add_scalar('Loss/Loss_Bert_train', loss_bert_inf, ep)
 
 
 if __name__ == '__main__':
