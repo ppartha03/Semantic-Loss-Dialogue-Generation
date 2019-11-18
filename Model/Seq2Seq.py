@@ -6,6 +6,7 @@ from torch.utils.tensorboard import SummaryWriter
 import numpy as np
 import argparse
 import os
+import logging
 sys.path.append('../Utils/')
 
 parser = argparse.ArgumentParser()
@@ -246,11 +247,15 @@ class Seq2Seq(nn.Module):
                     O_.step()
 
         if type_ == 'eval':
+            logging.info(
+                f"Train:   Loss_MLE_eval: {loss_mle_inf:.4f},  Loss_Bert_eval: {loss_bert_inf:.4f},  unmasked_accuracy_eval: {accuracy / words_count * 100:.2f}\n")
             self.writer.add_scalar('Loss/Loss_MLE_eval', loss_mle_inf, ep)
             self.writer.add_scalar('Loss/Loss_Bert_eval', loss_bert_inf, ep)
             self.writer.add_scalar('Loss/unmasked_accuracy_eval', accuracy / words_count * 100, ep)
             return accuracy / words_count
         if type_ == 'train':
+            logging.info(
+                f"Train:   Loss_MLE_train: {loss_mle_inf:.4f},  Loss_MLE_train: {loss_bert_inf:.4f},  unmasked_accuracy_train: {accuracy / words_count * 100:.2f}\n")
             self.writer.add_scalar('Loss/Loss_MLE_train', loss_mle_inf, ep)
             self.writer.add_scalar('Loss/Loss_Bert_train', loss_bert_inf, ep)
             self.writer.add_scalar('Loss/unmasked_accuracy_train', accuracy / words_count * 100, ep)
@@ -278,7 +283,7 @@ if __name__ == '__main__':
     if args.type == 'train':
         Data_valid.setBatchSize(config['batch_size'])
         for epoch in range(config['epoch'], config['num_epochs']):
-            print(epoch,'/',config['num_epochs'])
+            logging.info(str(epoch) + '/' + str(config['num_epochs']))
             saver = open(fname,'a')
             Model.modelrun(Data=Data_train, type_='train', total_step=Data_train.num_batches, ep=epoch,
                            sample_saver=None, saver=saver)
