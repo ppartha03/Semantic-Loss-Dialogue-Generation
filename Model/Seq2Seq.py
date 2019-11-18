@@ -272,17 +272,17 @@ if __name__ == '__main__':
     Data_train.setBatchSize(config['batch_size'])
 
     Model = Seq2Seq(config)
-    if args.reload:
+    if args.reload and args.type=='train':
         checkpoint = torch.load(os.path.join(saved_models, config['id'] + '_' + str(args.start_epoch)))
         Model.load_state_dict(checkpoint['model_state_dict'])
         config = checkpoint['config']
         wandb.init(project=config["wandb_project"], resume=config['id'])
 
-    wandb.init(project=config["wandb_project"], name=config['id'], id=config['id'], allow_val_change=True)
-    wandb.config.update(config)
-    wandb.watch(Model)
-
     if args.type == 'train':
+        wandb.init(project=config["wandb_project"], name=config['id'], id=config['id'], allow_val_change=True)
+        wandb.config.update(config)
+        wandb.watch(Model)
+
         Data_valid.setBatchSize(config['batch_size'])
         for epoch in range(config['epoch'], config['num_epochs']):
             logging.info(str(epoch) + '/' + str(config['num_epochs']))
