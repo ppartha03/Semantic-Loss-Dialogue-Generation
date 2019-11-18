@@ -104,7 +104,7 @@ config['device'] = device
 config['save_every_epoch'] = args.save_every_epoch
 config['posteos_mask'] = ~args.no_posteos_mask
 config['prebert_mask'] = ~args.no_prebert_mask
-config['best_mle_valid'] = 1000
+config['best_accuracy_valid'] = 0.0
 if config['prebert_mask']:
     config['id'] = '{}_preBertMask_{}_{}_{}_{}_{}_{}_{}_{}_{}'.format(args.dataset,args.hidden_size,args.encoder_learning_rate,args.decoder_learning_rate,args.loss,args.alpha,args.toggle_loss,args.output_dropout,args.change_nll_mask, args.no_posteos_mask)
 else:
@@ -141,6 +141,9 @@ class Seq2Seq(nn.Module):
     def modelrun(self, Data='', type_='train', total_step=200, ep=0, sample_saver='', saver=''):
         loss_mle_inf = 0.
         loss_bert_inf = 0.
+        accuracy = 0
+        words_count = 0
+
         self.Data = Data
         self.sample_saver = sample_saver
         for i in range(total_step):
@@ -165,6 +168,7 @@ class Seq2Seq(nn.Module):
 
             decoder_input_ = decoder_input[:,0,:]
             dec_list = []
+            mask = torch.from_numpy(config['weights']).to(device).bool()
 
             if args.type == 'train' and config['output_dropout'] > 0:
                 weight_random = np.random.random(len(config['weights'])-4) > config['output_dropout']
@@ -183,6 +187,12 @@ class Seq2Seq(nn.Module):
                 dec_list+=[decoder_output.view(-1,1,self.config['input_size'])]
                 target_response = target_response + [torch.argmax(decoder_input[:,di,:].view(batch_size,-1),dim =1).view(-1,1)]
                 response_ = response_ + [torch.argmax(decoder_output.view(batch_size,-1),dim =1).view(-1,1)]
+
+                #get accuracy
+                accuracy_mask = ~(target_response[-1] < 4)
+                accuracy += torch.sum(response_[-1].eq(target_response[-1]).masked_select(accuracy_mask)).item()
+                words_count += torch.sum(accuracy_mask).item()
+
                 if args.type == 'train':
                     response_premasked = response_premasked + [torch.argmax(decoder_output.view(batch_size,-1).masked_fill(~mask, -10**6),dim =1).view(-1,1)]
                 else:
@@ -237,11 +247,12 @@ class Seq2Seq(nn.Module):
         if type_ == 'eval':
             self.writer.add_scalar('Loss/Loss_MLE_eval', loss_mle_inf, ep)
             self.writer.add_scalar('Loss/Loss_Bert_eval', loss_bert_inf, ep)
-            return loss_mle_inf
+            self.writer.add_scalar('Loss/unmasked_accuracy_eval', accuracy / words_count * 100, ep)
+            return accuracy / words_count
         if type_ == 'train':
             self.writer.add_scalar('Loss/Loss_MLE_train', loss_mle_inf, ep)
             self.writer.add_scalar('Loss/Loss_Bert_train', loss_bert_inf, ep)
-
+            self.writer.add_scalar('Loss/unmasked_accuracy_train', accuracy / words_count * 100, ep)
 
 
 if __name__ == '__main__':
@@ -270,19 +281,20 @@ if __name__ == '__main__':
             torch.save(Model.state_dict(), os.path.join(saved_models, config['id']))
             if config['save_every_epoch']:
                 torch.save(Model.state_dict(), os.path.join(saved_models, config['id'] + '_' + str(epoch)))
-            loss_mle_valid = Model.modelrun(Data=Data_valid, type_='eval', total_step=Data_valid.num_batches, ep=epoch, sample_saver=None, saver=saver)
-            if loss_mle_valid < config['best_mle_valid']:
-                config['best_mle_valid'] = loss_mle_valid
-                torch.save(Model.state_dict(), os.path.join(saved_models, config['id'] + '_best_mle_valid'))
+            loss_accuracy_valid = Model.modelrun(Data=Data_valid, type_='eval', total_step=Data_valid.num_batches, ep=epoch, sample_saver=None, saver=saver)
+            if loss_accuracy_valid > config['best_accuracy_valid']:
+                config['best_accuracy_valid'] = loss_accuracy_valid
+                torch.save(Model.state_dict(), os.path.join(saved_models, config['id'] + '_best_accuracy_valid'))
     elif args.type == 'valid':
             sample_saver_valid = open(samples_fname+"_valid_"+config['id']+'.txt','w')
             sample_saver_valid = open(samples_fname+"_valid_"+config['id']+'.txt','a')
             sample_saver_train = open(samples_fname+"_train_"+config['id']+'.txt','w')
             sample_saver_train = open(samples_fname+"_train_"+config['id']+'.txt','a')
             #use the model with best validation nll loss for the baseline (without  bert loss)
-            if args.loss=='nll' or (args.loss=='combine' and args.alpha == 0) or (args.loss=='alternate' and args.toggle_loss == 1):
-                Model.load_state_dict(torch.load(os.path.join(saved_models, config['id'] + '_best_mle_valid')))
-            else:
-                Model.load_state_dict(torch.load(os.path.join(saved_models, config['id'])))
+            # if args.loss=='nll' or (args.loss=='combine' and args.alpha == 0) or (args.loss=='alternate' and args.toggle_loss == 1):
+            #     Model.load_state_dict(torch.load(os.path.join(saved_models, config['id'] + '_best_mle_valid')))
+            # else:
+            #     Model.load_state_dict(torch.load(os.path.join(saved_models, config['id'])))
+            Model.load_state_dict(torch.load(os.path.join(saved_models, config['id'] + '_best_accuracy_valid')))
             Model.modelrun(Data=Data_train, type_='valid', total_step=Data_valid.num_batches, ep=0,sample_saver=sample_saver_train, saver=saver)
             Model.modelrun(Data=Data_valid, type_='valid', total_step=Data_valid.num_batches, ep=0,sample_saver=sample_saver_valid, saver=saver)
