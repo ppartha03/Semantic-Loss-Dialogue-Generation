@@ -14,7 +14,7 @@ parser.add_argument('--hidden_size', type=int, default=128)
 parser.add_argument('--dataset', type=str, default="frames")
 parser.add_argument('--loss',type=str, default='combine') #nll, bert, combine, alternate
 parser.add_argument('--batch_size', type=int, default=8)
-parser.add_argument('--type', type=str, default='train')
+parser.add_argument('--type', type=str, default='train') #train, valid, test
 parser.add_argument('--alpha',type=float, default=0.0)
 parser.add_argument('--toggle_loss',type=float, default=0.5)
 parser.add_argument('--teacher_forcing', type=float, default=0.1)
@@ -257,12 +257,17 @@ class Seq2Seq(nn.Module):
 
 
 if __name__ == '__main__':
-    if args.dataset == 'mwoz':
+    if args.dataset == 'mwoz' and (args.type == 'train' or args.type == 'valid'):
         Data_train = WoZGraphDataset()
         Data_valid = WoZGraphDataset(suffix = 'valid')
-    else:
+    elif args.dataset == 'mwoz' and args.type == 'test':
+        Data_test = WoZGraphDataset(suffix='test')
+    elif args.dataset == 'frames' and (args.type == 'train' or args.type == 'valid'):
         Data_train = FramesGraphDataset()
-        Data_valid = FramesGraphDataset(suffix = 'valid')
+        Data_valid = FramesGraphDataset(suffix='valid')
+    elif args.dataset == 'framse' and args.type == 'test':
+        Data_test = FramesGraphDataset(suffix='test')
+
     Data_train.setBatchSize(config['batch_size'])
 
     Model = Seq2Seq(config)
@@ -300,3 +305,10 @@ if __name__ == '__main__':
             Model.load_state_dict(checkpoint['model_state_dict'])
             Model.modelrun(Data=Data_train, type_='valid', total_step=Data_valid.num_batches, ep=0,sample_saver=sample_saver_train, saver=saver)
             Model.modelrun(Data=Data_valid, type_='valid', total_step=Data_valid.num_batches, ep=0,sample_saver=sample_saver_valid, saver=saver)
+
+    elif args.type == 'test':
+            sample_saver_test = open(samples_fname+"_test_"+config['id']+'.txt','w')
+            sample_saver_test = open(samples_fname+"_test_"+config['id']+'.txt','a')
+            checkpoint = torch.load(os.path.join(saved_models, config['id'] + '_best_accuracy_valid'))
+            Model.load_state_dict(checkpoint['model_state_dict'])
+            Model.modelrun(Data=Data_test, type_='valid', total_step=Data_test.num_batches, ep=0,sample_saver=sample_saver_test, saver=saver)
