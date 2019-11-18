@@ -113,6 +113,7 @@ else:
 config['weights'] = np.hstack([np.array([1,1,1,0]),np.ones(config['input_size']-4)])
 config['pad_index'] = 3
 config['eos_index'] = 1
+config['epoch'] = 0
 # 1 => account for loss
 # 0 => mask the token
 # embedding matrix Nxd
@@ -265,26 +266,26 @@ if __name__ == '__main__':
     Data_train.setBatchSize(config['batch_size'])
 
     Model = Seq2Seq(config)
-    if args.reload and args.start_epoch != -1:
-        Model.load_state_dict(torch.load(os.path.join(saved_models, config['id'] + '_' + str(args.start_epoch))))
-    elif args.reload:
-        Model.load_state_dict(torch.load(os.path.join(saved_models, config['id'])))
+    if args.reload:
+        checkpoint = torch.load(os.path.join(saved_models, config['id'] + '_' + str(args.start_epoch)))
+        Model.load_state_dict(checkpoint['model_state_dict'])
+        config = checkpoint['config']
     if args.type == 'train':
         Data_valid.setBatchSize(config['batch_size'])
-        if not args.reload:
-            args.start_epoch = -1
-        for epoch in range(args.start_epoch+1, config['num_epochs']):
+        for epoch in range(config['epoch'], config['num_epochs']):
             print(epoch,'/',config['num_epochs'])
             saver = open(fname,'a')
             Model.modelrun(Data=Data_train, type_='train', total_step=Data_train.num_batches, ep=epoch,
                            sample_saver=None, saver=saver)
-            torch.save(Model.state_dict(), os.path.join(saved_models, config['id']))
+            config['epoch'] += 1
+            torch.save({'model_State_dict': Model.state_dict(), 'config': config}, os.path.join(saved_models, config['id'] + '_-1'))
             if config['save_every_epoch']:
-                torch.save(Model.state_dict(), os.path.join(saved_models, config['id'] + '_' + str(epoch)))
+                torch.save({'model_State_dict': Model.state_dict(), 'config': config}, os.path.join(saved_models, config['id'] + '_' + str(epoch)))
             loss_accuracy_valid = Model.modelrun(Data=Data_valid, type_='eval', total_step=Data_valid.num_batches, ep=epoch, sample_saver=None, saver=saver)
             if loss_accuracy_valid > config['best_accuracy_valid']:
                 config['best_accuracy_valid'] = loss_accuracy_valid
-                torch.save(Model.state_dict(), os.path.join(saved_models, config['id'] + '_best_accuracy_valid'))
+                torch.save({'model_State_dict': Model.state_dict(), 'config': config}, os.path.join(saved_models, config['id'] + '_best_accuracy_valid'))
+
     elif args.type == 'valid':
             sample_saver_valid = open(samples_fname+"_valid_"+config['id']+'.txt','w')
             sample_saver_valid = open(samples_fname+"_valid_"+config['id']+'.txt','a')
@@ -295,6 +296,7 @@ if __name__ == '__main__':
             #     Model.load_state_dict(torch.load(os.path.join(saved_models, config['id'] + '_best_mle_valid')))
             # else:
             #     Model.load_state_dict(torch.load(os.path.join(saved_models, config['id'])))
-            Model.load_state_dict(torch.load(os.path.join(saved_models, config['id'] + '_best_accuracy_valid')))
+            checkpoint = torch.load(os.path.join(saved_models, config['id'] + '_best_accuracy_valid'))
+            Model.load_state_dict(checkpoint['model_state_dict'])
             Model.modelrun(Data=Data_train, type_='valid', total_step=Data_valid.num_batches, ep=0,sample_saver=sample_saver_train, saver=saver)
             Model.modelrun(Data=Data_valid, type_='valid', total_step=Data_valid.num_batches, ep=0,sample_saver=sample_saver_valid, saver=saver)
