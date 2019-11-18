@@ -35,7 +35,7 @@ parser.add_argument('--seed', type=int, default=100)
 parser.add_argument('--no_posteos_mask', action='store_true') #if true, don't mask the words generated after the <eos> token
 #if true, don't apply the mask before generating the Bert sentence (allow the model to generate masked tokens, and then mask them during the embedding calculation)
 parser.add_argument('--no_prebert_mask', action='store_true')
-parser.add_argument('--wandb_project', default='metadial')
+parser.add_argument('--wandb_project', type=str, default='metadial')
 parser.add_argument('--dont_use_best', action='store_true')
 
 args = parser.parse_args()
