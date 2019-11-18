@@ -276,8 +276,9 @@ if __name__ == '__main__':
         checkpoint = torch.load(os.path.join(saved_models, config['id'] + '_' + str(args.start_epoch)))
         Model.load_state_dict(checkpoint['model_state_dict'])
         config = checkpoint['config']
+        wandb.init(project=config["wandb_project"], resume=config['id'])
 
-    wandb.init(project=config["wandb_project"])
+    wandb.init(project=config["wandb_project"], name=config['id'], id=config['id'], config=config)
     wandb.watch(Model)
 
     if args.type == 'train':
@@ -293,6 +294,7 @@ if __name__ == '__main__':
             loss_mle_valid = Model.modelrun(Data=Data_valid, type_='eval', total_step=Data_valid.num_batches, ep=epoch, sample_saver=None)
             if loss_mle_valid < config['best_mle_valid']:
                 config['best_mle_valid'] = loss_mle_valid
+                wandb.config.update({"best_mle_valid":config['best_mle_valid']})
                 torch.save({'model_State_dict': Model.state_dict(), 'config': config},
                            os.path.join(saved_models, config['id'] + '_best_mle_valid'))
                 #save the best model to wandb
