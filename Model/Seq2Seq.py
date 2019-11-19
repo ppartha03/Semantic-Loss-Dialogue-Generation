@@ -105,6 +105,7 @@ config['decoder_learning_rate'] = args.decoder_learning_rate
 config['encoder_learning_rate'] = args.encoder_learning_rate
 config['batch_size'] = args.batch_size
 config['alpha'] = args.alpha
+config['toggle'] = args.toggle_loss
 config['loss'] = args.loss
 config['dataset'] = args.dataset
 config['device'] = device
