@@ -247,7 +247,7 @@ class Seq2Seq(nn.Module):
                     O_.step()
 
         if type_ == 'eval':
-            c
+            logging.info(
                 f"Train:   Loss_MLE_eval: {loss_mle_inf:.4f},  Loss_Bert_eval: {loss_bert_inf:.4f}\n")
             wandb.log({'Loss_MLE_eval': loss_mle_inf, 'Loss_Bert_eval': loss_bert_inf, 'global_step':ep})
             return loss_mle_inf
