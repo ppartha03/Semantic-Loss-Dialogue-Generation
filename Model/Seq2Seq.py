@@ -316,7 +316,7 @@ if __name__ == '__main__':
             # sample_saver_train = open(samples_fname + "_train_" + config['id'] + '_best_model.txt', 'w')
             # sample_saver_train = open(samples_fname + "_train_" + config['id'] + '_best_model.txt', 'a')
             checkpoint = torch.load(os.path.join(saved_models, config['id'] + '_best_mle_valid'))
-        Model.load_state_dict(checkpoint['model_state_dict'])
+        Model.load_state_dict(checkpoint['model_State_dict'])
         # Model.modelrun(Data=Data_train, type_='valid', total_step=Data_valid.num_batches, ep=0,sample_saver=sample_saver_train)
         Model.modelrun(Data=Data_valid, type_='valid', total_step=Data_valid.num_batches, ep=0,sample_saver=sample_saver_valid)
 
@@ -329,5 +329,5 @@ if __name__ == '__main__':
             sample_saver_test = open(samples_fname + "_test_" + config['id'] + '_best_model.txt', 'w')
             sample_saver_test = open(samples_fname + "_test_" + config['id'] + '_best_model.txt', 'a')
             checkpoint = torch.load(os.path.join(saved_models, config['id'] + '_best_mle_valid'))
-        Model.load_state_dict(checkpoint['model_state_dict'])
+        Model.load_state_dict(checkpoint['model_State_dict'])
         Model.modelrun(Data=Data_test, type_='valid', total_step=Data_test.num_batches, ep=0,sample_saver=sample_saver_test)
