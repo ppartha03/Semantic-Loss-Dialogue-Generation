@@ -249,12 +249,12 @@ class Seq2Seq(nn.Module):
         if type_ == 'eval':
             logging.info(
                 f"Train:   Loss_MLE_eval: {loss_mle_inf:.4f},  Loss_Bert_eval: {loss_bert_inf:.4f}\n")
-            wandb.log({'Loss_MLE_eval': loss_mle_inf, 'Loss_Bert_eval': loss_bert_inf}, step=ep)
+            wandb.log({'Loss_MLE_eval': loss_mle_inf, 'Loss_Bert_eval': loss_bert_inf, 'global_step':ep})
             return loss_mle_inf
         if type_ == 'train':
             logging.info(
                 f"Train:   Loss_MLE_train: {loss_mle_inf:.4f},  Loss_MLE_train: {loss_bert_inf:.4f}\n")
-            wandb.log({'Loss_MLE_train': loss_mle_inf, 'Loss_Bert_train': loss_bert_inf}, step=ep)
+            wandb.log({'Loss_MLE_train': loss_mle_inf, 'Loss_Bert_train': loss_bert_inf, 'global_step':ep})
 
 
 if __name__ == '__main__':
