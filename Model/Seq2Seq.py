@@ -291,6 +291,7 @@ if __name__ == '__main__':
             Model.modelrun(Data=Data_train, type_='train', total_step=Data_train.num_batches, ep=epoch,
                            sample_saver=None)
             config['epoch'] += 1
+            wandb.config.update({'epoch': config['epoch']}, allow_val_change=True)
             torch.save({'model_State_dict': Model.state_dict(), 'config': config}, os.path.join(saved_models, config['id'] + '_-1'))
             if config['save_every_epoch']:
                 torch.save({'model_State_dict': Model.state_dict(), 'config': config}, os.path.join(saved_models, config['id'] + '_' + str(epoch)))
