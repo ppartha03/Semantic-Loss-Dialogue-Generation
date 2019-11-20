@@ -247,7 +247,7 @@ class Seq2Seq(nn.Module):
                     O_.step()
 
         if type_ == 'eval':
-            logging.info(
+            c
                 f"Train:   Loss_MLE_eval: {loss_mle_inf:.4f},  Loss_Bert_eval: {loss_bert_inf:.4f}\n")
             wandb.log({'Loss_MLE_eval': loss_mle_inf, 'Loss_Bert_eval': loss_bert_inf, 'global_step':ep})
             return loss_mle_inf
@@ -284,6 +284,7 @@ if __name__ == '__main__':
     if args.type == 'train':
         wandb.config.update(config, allow_val_change=True)
         wandb.watch(Model)
+        logging.info(f"using {config['device']}\n")
 
         Data_valid.setBatchSize(config['batch_size'])
         for epoch in range(config['epoch'], config['num_epochs']):
