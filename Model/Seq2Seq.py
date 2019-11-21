@@ -83,8 +83,6 @@ config['save_path'] = save_path
 config["wandb_project"] = args.wandb_project
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 config['seed'] = args.seed
-torch.manual_seed(config['seed'])
-np.random.seed(config['seed'])
 
 if args.dataset == 'mwoz':
     config['data'] = WoZGraphDataset(Data_dir=config['data_path'] + '/MULTIWOZ2/')
@@ -114,14 +112,21 @@ config['posteos_mask'] = ~args.no_posteos_mask
 config['prebert_mask'] = ~args.no_prebert_mask
 config['best_mle_valid'] = 10000
 if config['prebert_mask']:
-    config['id'] = '{}_preBertMask_{}_{}_{}_{}_{}_{}_{}_{}_{}'.format(args.dataset,args.hidden_size,args.encoder_learning_rate,args.decoder_learning_rate,args.loss,args.alpha,args.toggle_loss,args.output_dropout,args.change_nll_mask, args.no_posteos_mask)
+    config['id'] = '{}_preBertMask_{}_{}_{}_{}_{}_{}_{}_{}_{}'.format(args.dataset,args.hidden_size,args.encoder_learning_rate,
+                                                                         args.decoder_learning_rate,args.loss,args.alpha,
+                                                                         args.toggle_loss,args.output_dropout,args.change_nll_mask, args.no_posteos_mask)
 else:
-    config['id'] = '{}_{}_{}_{}_{}_{}_{}_{}_{}_{}'.format(args.dataset,args.hidden_size,args.encoder_learning_rate,args.decoder_learning_rate,args.loss,args.alpha,args.toggle_loss,args.output_dropout,args.change_nll_mask, args.no_posteos_mask)
+    config['id'] = '{}_{}_{}_{}_{}_{}_{}_{}_{}_{}'.format(args.dataset,args.hidden_size,args.encoder_learning_rate,
+                                                             args.decoder_learning_rate,args.loss,args.alpha,args.toggle_loss,
+                                                             args.output_dropout,args.change_nll_mask, args.no_posteos_mask)
+config['wandb_id'] = config['id'] + '_' + str(np.random.randint(1000))
 
 config['weights'] = np.hstack([np.array([1,1,1,0]),np.ones(config['input_size']-4)])
 config['pad_index'] = 3
 config['eos_index'] = 1
 config['epoch'] = 0
+torch.manual_seed(config['seed'])
+np.random.seed(config['seed'])
 # 1 => account for loss
 # 0 => mask the token
 # embedding matrix Nxd
@@ -267,21 +272,21 @@ if __name__ == '__main__':
     elif args.dataset == 'frames' and (args.type == 'train' or args.type == 'valid'):
         Data_train = FramesGraphDataset()
         Data_valid = FramesGraphDataset(suffix='valid')
-    elif args.dataset == 'framse' and args.type == 'test':
+    elif args.dataset == 'frames' and args.type == 'test':
         Data_test = FramesGraphDataset(suffix='test')
-
-    Data_train.setBatchSize(config['batch_size'])
 
     Model = Seq2Seq(config)
     if args.reload and args.type=='train':
         checkpoint = torch.load(os.path.join(saved_models, config['id'] + '_' + str(args.start_epoch)))
         Model.load_state_dict(checkpoint['model_State_dict'])
         config = checkpoint['config']
-        wandb.init(project=config["wandb_project"], resume=config['id'], allow_val_change=True)
+        config["device"] = device
+        wandb.init(project=config["wandb_project"], resume=config['wandb_id'], allow_val_change=True)
     elif args.type=='train':
-        wandb.init(project=config["wandb_project"], name=config['id'], id=config['id'], allow_val_change=True)
+        wandb.init(project=config["wandb_project"], name=config['id'], id=config['wandb_id'], allow_val_change=True)
 
     if args.type == 'train':
+        Data_train.setBatchSize(config['batch_size'])
         wandb.config.update(config, allow_val_change=True)
         wandb.watch(Model)
         logging.info(f"using {config['device']}\n")
