@@ -31,6 +31,8 @@ parser.add_argument('--save_every_epoch', action='store_true')
 parser.add_argument('--reload', action='store_true')
 parser.add_argument('--start_epoch', type=int, default=-1)
 parser.add_argument('--num_epochs', type=int, default=100)
+parser.add_argument('--beam_search', action='store_true')
+parser.add_argument('--topk', type=int, default=5)
 parser.add_argument('--seed', type=int, default=100)
 parser.add_argument('--no_posteos_mask', action='store_true') #if true, don't mask the words generated after the <eos> token
 #if true, don't apply the mask before generating the Bert sentence (allow the model to generate masked tokens, and then mask them during the embedding calculation)
@@ -46,7 +48,7 @@ result_path = os.path.join(save_path, 'Results', args.dataset)
 sys.path.append(args.data_path)
 from WoZ_data_iterator import WoZGraphDataset
 from Frames_data_iterator import FramesGraphDataset
-from Bert_util import Load_embeddings, Bert_loss, Mask_sentence
+from Bert_util import Load_embeddings, Bert_loss, Mask_sentence, getTopK
 
 
 if not os.path.exists(os.path.join(result_path, 'Samples')):
@@ -178,6 +180,7 @@ class Seq2Seq(nn.Module):
             for di in range(self.Data[i]['encoder_length']):
                 hidden_enc, out = self.Encoder(input_[:,di,:].view(-1,1,self.config['input_size']),hidden_enc)
                 context_ = context_ + [torch.argmax(input_[:,di,:].view(batch_size,-1),dim =1).view(-1,1)]
+
             decoder_hidden = hidden_enc
 
             decoder_input_ = decoder_input[:,0,:]
@@ -238,11 +241,22 @@ class Seq2Seq(nn.Module):
             train_loss_inf += train_loss.item() / total_step
 
             if type_ == 'valid' or type_ == 'test':
+                if args.beam_search:
+                    beam = getTopK(dec_list, args.topk, self.Data.Vocab_inv, batch_size,self.Data[i]['decoder_length']-1)
                 for c_index in range(con.shape[0]):
                     c = ' '.join([self.Data.Vocab_inv[idx.item()] for idx in con[c_index]])
-                    r = ' '.join([self.Data.Vocab_inv[idx.item()] for idx in res[c_index]])
                     t = ' '.join([self.Data.Vocab_inv[idx.item()] for idx in tar[c_index]])
-                    self.sample_saver.write('Context: '+ c + '\n' + 'Model_Response: ' + r + '\n' + 'Target: ' + t + '\n\n')
+                    if not args.beam_search:
+                        r = ' '.join([self.Data.Vocab_inv[idx.item()] for idx in res[c_index]])
+                        self.sample_saver.write('Context: '+ c + '\n' + 'Model_Response: ' + r + '\n' + 'Target: ' + t + '\n\n')
+                    else:
+                        r = ''
+                        for beam_ind in range(len(beam[c_index])):
+                            beam_res,score = beam[c_index][beam_ind]
+                            r += 'Model_Response_'+str(beam_ind)+': '+' '.join(beam_res)+'\n'
+                        self.sample_saver.write('Context: '+ c + '\n' + r + 'Target: ' + t + '\n\n')
+
+
             if type_ == 'train':
                 self.optimizer.zero_grad()
                 self.optimizer_dec.zero_grad()
