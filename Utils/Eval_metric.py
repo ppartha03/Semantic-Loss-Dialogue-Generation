@@ -7,6 +7,7 @@ import math
 import argparse
 import _pickle as cPickle
 from rouge import Rouge
+import logging
 
 bleu_met = nltk.translate.bleu_score.sentence_bleu
 parser = argparse.ArgumentParser()
@@ -55,3 +56,4 @@ def Metrics(file_loc):
 if __name__ == '__main__':
     mets = Metrics(args.sample)
     print(mets)
+    logging.info(mets)
