@@ -102,16 +102,20 @@ if __name__ == '__main__':
             ret = [k for k, v in folds.items() if v != -fold]
         else:
             ret = [k for k, v in folds.items() if v == fold]
-        return ret
+        return set(ret)
 
-    test_users = get_users_for_fold(2)
-    train_users = get_users_for_fold(-2)
+    test_users = list(get_users_for_fold(2))
+    valid_users = list(get_users_for_fold(8))
+    train_users = list(get_users_for_fold(-2).intersection(get_users_for_fold(-8)))
 
     train_dialogues = [d for d in raw_data if d['user_id'] in train_users]
     test_dialogues = [d for d in raw_data if d['user_id'] in test_users]
+    valid_dialogues = [d for d in raw_data if d['user_id'] in valid_users]
 
     if args.type == 'train':
         dialogues = train_dialogues
+    elif args.type == 'valid':
+        dialogues = valid_dialogues
     else:
         dialogues = test_dialogues
 

@@ -85,6 +85,8 @@ if __name__ == '__main__':
 
     if args.type == 'train':
         dialogue_files = train_files
+    elif args.type == 'test':
+        dialogue_files = dev_files
     else:
         dialogue_files = test_files
 
