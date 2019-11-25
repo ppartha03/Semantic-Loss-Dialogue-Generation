@@ -3,11 +3,12 @@ import torch
 import torch.nn.functional as F
 import os
 import threading as thrd
+import logging
 import time
 
 #/# Load Embeddings
 responses_for_batch = []
-def getTopK(dec_list, topk = 5, Vocab_inv = None, batch_size = 1,seq_length = 10):
+def getTopK(dec_list, topk = 5, Vocab_inv = None, batch_size = 1,seq_length = 10, thrd_nmb=2):
     global responses_for_batch
     # walk over each step in sequence
     responses_for_batch = [[] for _ in range(batch_size)]
@@ -32,8 +33,8 @@ def getTopK(dec_list, topk = 5, Vocab_inv = None, batch_size = 1,seq_length = 10
     for d in range(len(dec_list)):
         dec_list[d] = dec_list[d].view(batch_size,-1)
     dec_list = torch.stack(dec_list).view(batch_size,seq_length,-1)
-    for min_batch in range(0,batch_size,2):
-        for bs in range(min_batch,min_batch+2):
+    for min_batch in range(0,batch_size,thrd_nmb):
+        for bs in range(min_batch,min_batch+thrd_nmb):
             if bs < batch_size:
                 thrd.Thread(target = batch_decode_thread, args = [bs, dec_list[bs]]).start()
         for thread in thrd.enumerate():
@@ -48,7 +49,8 @@ def getTopK(dec_list, topk = 5, Vocab_inv = None, batch_size = 1,seq_length = 10
                 else:
                     raise
 
-    print(responses_for_batch)
+    # print(responses_for_batch)
+    logging.info(responses_for_batch)
     return responses_for_batch
 
 def Load_embeddings(dataset):
