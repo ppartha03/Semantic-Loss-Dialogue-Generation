@@ -123,7 +123,7 @@ else:
     config['id'] = '{}_{}_{}_{}_{}_{}_{}_{}_{}_{}'.format(args.dataset,args.hidden_size,args.encoder_learning_rate,
                                                              args.decoder_learning_rate,args.loss,args.alpha,args.toggle_loss,
                                                              args.output_dropout,args.change_nll_mask, args.no_posteos_mask)
-config['wandb_id'] = config['id'] + '_' + str(np.random.randint(1000))
+config['wandb_id'] = config['id'] + '_' + str(np.random.randint(10000))
 
 config['weights'] = np.hstack([np.array([1,1,1,0]),np.ones(config['input_size']-4)])
 config['pad_index'] = 3
@@ -165,6 +165,7 @@ class Seq2Seq(nn.Module):
         self.Data = Data
         self.sample_saver = sample_saver
         meteor_score_valid = 0.
+        cnt = 0.
         for i in range(total_step):
             seq_loss_a = 0.
             batch_size = self.Data[i]['input'].shape[0]
@@ -251,6 +252,7 @@ class Seq2Seq(nn.Module):
                     c = ' '.join([self.Data.Vocab_inv[idx.item()] for idx in con[c_index]])
                     t_list = [self.Data.Vocab_inv[idx.item()] for idx in tar[c_index]]
                     t = ' '.join(t_list)
+                    cnt += 1
                     if ( not args.beam_search ):
                         r_list = [self.Data.Vocab_inv[idx.item()] for idx in res[c_index]]
                         r = ' '.join(r_list)
@@ -262,7 +264,7 @@ class Seq2Seq(nn.Module):
                             ind_mod = r_list.index('<eos>')
                         else:
                             ind_mod = -1
-                        meteor_score_valid += meteor_score(' '.join(r_list[:ind_mod]),' '.join(t_list[1:ind_tar]))/(float(con.shape[0])*total_step)
+                        meteor_score_valid += meteor_score(' '.join(r_list[:ind_mod]),' '.join(t_list[1:ind_tar]))
                         self.sample_saver.write('Context: '+ c + '\n' + 'Model_Response: ' + r + '\n' + 'Target: ' + t + '\n\n')
                     else:
                         r = ''
@@ -280,6 +282,7 @@ class Seq2Seq(nn.Module):
                     O_.step()
 
         if type_ == 'eval':
+            meteor_score_valid = meteor_score_valid / cnt * 100
             logging.info(
                 f"Train:   Loss_MLE_eval: {loss_mle_inf:.4f},  Loss_Bert_eval: {loss_bert_inf:.4f}\n")
             wandb.log({'Loss_MLE_eval': loss_mle_inf, 'Loss_Bert_eval': loss_bert_inf,
