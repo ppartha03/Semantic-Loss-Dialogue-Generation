@@ -35,6 +35,7 @@ parser.add_argument('--beam_search', action='store_true')
 parser.add_argument('--topk', type=int, default=5)
 parser.add_argument('--seed', type=int, default=100)
 parser.add_argument('--no_posteos_mask', action='store_true') #if true, don't mask the words generated after the <eos> token
+parser.add_argument('--sentence_embedding', type=str, default='mean') #calculate sentence embedding using "mean" or "sum" of bert embeddings
 #if true, don't apply the mask before generating the Bert sentence (allow the model to generate masked tokens, and then mask them during the embedding calculation)
 parser.add_argument('--no_prebert_mask', action='store_true')
 parser.add_argument('--wandb_project', type=str, default='metadial')
@@ -112,18 +113,21 @@ config['dataset'] = args.dataset
 config['device'] = device
 config['save_every_epoch'] = args.save_every_epoch
 config['posteos_mask'] = ~args.no_posteos_mask
+config['sentence_embedding'] = args.sentence_embedding
 config['prebert_mask'] = ~args.no_prebert_mask
 config['best_mle_valid'] = 10000
 config['best_combined_loss'] = 10000
 config['meteor_valid'] = 0
 if config['prebert_mask']:
-    config['id'] = '{}_preBertMask_{}_{}_{}_{}_{}_{}_{}_{}_{}'.format(args.dataset,args.hidden_size,args.encoder_learning_rate,
-                                                                         args.decoder_learning_rate,args.loss,args.alpha,
-                                                                         args.toggle_loss,args.output_dropout,args.change_nll_mask, args.no_posteos_mask)
+    config['id'] = '{}_preBertMask_{}_{}_{}_{}_{}_{}_{}_{}_{}_{}'.format(args.dataset,args.hidden_size,args.encoder_learning_rate,
+                                                                      args.decoder_learning_rate,args.loss,args.alpha,
+                                                                      args.toggle_loss,args.output_dropout,args.change_nll_mask, args.sentence_embedding,
+                                                                      args.no_posteos_mask)
 else:
-    config['id'] = '{}_{}_{}_{}_{}_{}_{}_{}_{}_{}'.format(args.dataset,args.hidden_size,args.encoder_learning_rate,
-                                                             args.decoder_learning_rate,args.loss,args.alpha,args.toggle_loss,
-                                                             args.output_dropout,args.change_nll_mask, args.no_posteos_mask)
+    config['id'] = '{}_{}_{}_{}_{}_{}_{}_{}_{}_{}_{}'.format(args.dataset,args.hidden_size,args.encoder_learning_rate,
+                                                          args.decoder_learning_rate,args.loss,args.alpha,args.toggle_loss,
+                                                          args.output_dropout,args.change_nll_mask, args.sentence_embedding,
+                                                          args.no_posteos_mask)
 config['wandb_id'] = config['id'] + '_' + str(np.random.randint(10000))
 
 config['weights'] = np.hstack([np.array([1,1,1,0]),np.ones(config['input_size']-4)])
@@ -224,10 +228,10 @@ class Seq2Seq(nn.Module):
 
             if config['prebert_mask']:
                 res_premasked = Posteos_mask(res_premasked, config)
-                loss_bert = Bert_loss(self.Bert_embedding(res_premasked), self.Bert_embedding(tar))
+                loss_bert = Bert_loss(self.Bert_embedding(res_premasked), self.Bert_embedding(tar), config['sentence_embedding'])
             else:
                 res_postmasked = Mask_sentence(res, mask, config)
-                loss_bert = Bert_loss(self.Bert_embedding(res_postmasked), self.Bert_embedding(tar))
+                loss_bert = Bert_loss(self.Bert_embedding(res_postmasked), self.Bert_embedding(tar), config['sentence_embedding'])
             loss_bert_inf += loss_bert.item()/total_step
 
             dec = torch.cat(dec_list, dim=1)
