@@ -24,9 +24,9 @@ def getTopK(dec_list, topk = 5, Vocab_inv = None, batch_size = 1,seq_length = 10
                     for j in range(len(row)):
                         candidate = [seq+[Vocab_inv[j]], score * -row[j]]
                         all_candidates.append(candidate)
-        	# order all candidates by score
+            # order all candidates by score
             ordered = sorted(all_candidates, key=lambda tup:tup[1])
-        	# select k best
+            # select k best
             sequences = ordered[:topk]
         count+=1
         responses_for_batch[thread_ind] = sequences
@@ -98,4 +98,20 @@ def Mask_sentence(res, mask, config):
         eos_positions = torch.argmin(eos_positions, dim=1).unsqueeze(1).expand_as(indices)
         mask_posteos = indices <= eos_positions
         res_masked = res_masked.masked_fill(~mask_posteos, mask_ind)
+    return res_masked
+
+def Posteos_mask(res, config):
+    # mask_ind here corresponds to the index of the <pad> words
+    mask_ind = config['pad_index']
+    eos_ind = config['eos_index']
+    device = config['device']
+    res_masked = res
+    mask_posteos = res == eos_ind
+    indices = np.arange(res.shape[1])
+    indices = torch.from_numpy(indices).to(device)
+    indices = indices.repeat(res.shape[0], 1)
+    eos_positions = indices.masked_fill(~mask_posteos, 100000)
+    eos_positions = torch.argmin(eos_positions, dim=1).unsqueeze(1).expand_as(indices)
+    mask_posteos = indices <= eos_positions
+    res_masked = res_masked.masked_fill(~mask_posteos, mask_ind)
     return res_masked

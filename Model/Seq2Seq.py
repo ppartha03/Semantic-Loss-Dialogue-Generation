@@ -48,8 +48,9 @@ result_path = os.path.join(save_path, 'Results', args.dataset)
 sys.path.append(args.data_path)
 from WoZ_data_iterator import WoZGraphDataset
 from Frames_data_iterator import FramesGraphDataset
-from Bert_util import Load_embeddings, Bert_loss, Mask_sentence, getTopK
-from nltk.translate.meteor_score import meteor_score
+from Bert_util import Load_embeddings, Bert_loss, Mask_sentence, getTopK, Posteos_mask
+# from nltk.translate.meteor_score import meteor_score
+from Eval_metric import meteor
 
 if not os.path.exists(os.path.join(result_path, 'Samples')):
     os.makedirs(os.path.join(result_path, 'Samples'))
@@ -222,6 +223,7 @@ class Seq2Seq(nn.Module):
             loss_mle_inf += loss.item()/total_step#seq_loss_a.item()/batch_size/self.Data[i]['decoder_length']
 
             if config['prebert_mask']:
+                res_premasked = Posteos_mask(res_premasked, config)
                 loss_bert = Bert_loss(self.Bert_embedding(res_premasked), self.Bert_embedding(tar))
             else:
                 res_postmasked = Mask_sentence(res, mask, config)
@@ -256,15 +258,15 @@ class Seq2Seq(nn.Module):
                     if ( not args.beam_search ):
                         r_list = [self.Data.Vocab_inv[idx.item()] for idx in res[c_index]]
                         r = ' '.join(r_list)
-                        if '<eos>' in t_list:
-                            ind_tar = t_list.index('<eos>')
-                        else:
-                            ind_tar = -1
-                        if '<eos>' in r_list:
-                            ind_mod = r_list.index('<eos>')
-                        else:
-                            ind_mod = -1
-                        meteor_score_valid += meteor_score(' '.join(r_list[:ind_mod]),' '.join(t_list[1:ind_tar]))
+                        # if '<eos>' in t_list:
+                        #     ind_tar = t_list.index('<eos>')
+                        # else:
+                        #     ind_tar = -1
+                        # if '<eos>' in r_list:
+                        #     ind_mod = r_list.index('<eos>')
+                        # else:
+                        #     ind_mod = -1
+                        # meteor_score_valid += meteor_score(' '.join(r_list[:ind_mod]),' '.join(t_list[1:ind_tar]))
                         self.sample_saver.write('Context: '+ c + '\n' + 'Model_Response: ' + r + '\n' + 'Target: ' + t + '\n\n')
                     else:
                         r = ''
@@ -282,9 +284,11 @@ class Seq2Seq(nn.Module):
                     O_.step()
 
         if type_ == 'eval':
-            meteor_score_valid = meteor_score_valid / cnt * 100
+            # meteor_score_valid = meteor_score_valid / cnt * 100
+            self.sample_saver.close()
+            meteor_score_valid = meteor(sample_saver.name)*100.
             logging.info(
-                f"Train:   Loss_MLE_eval: {loss_mle_inf:.4f},  Loss_Bert_eval: {loss_bert_inf:.4f}\n")
+                f"Valid:   Loss_MLE_eval: {loss_mle_inf:.4f},  Loss_Bert_eval: {loss_bert_inf:.4f}, 'meteor_score': {meteor_score_valid:.2f}\n")
             wandb.log({'Loss_MLE_eval': loss_mle_inf, 'Loss_Bert_eval': loss_bert_inf,
                        'train_loss_eval': train_loss_inf, 'reinforce_loss_eval': loss_reinforce_inf,
                        'meteor_score': meteor_score_valid, 'global_step':ep})
@@ -409,9 +413,9 @@ if __name__ == '__main__':
                 samples_fname + "_test_" + config['id'] + '_best_mle_' + str(args.beam_search) + '.txt', 'a')
             checkpoint = torch.load(os.path.join(saved_models, config['id'] + '_best_mle_valid'))
         elif args.validation_model == 'best_meteor':
-            sample_saver_valid = open(
+            sample_saver_test = open(
                 samples_fname + "_test_" + config['id'] + '_best_meteor_' + str(args.beam_search) + '.txt', 'w')
-            sample_saver_valid = open(
+            sample_saver_test = open(
                 samples_fname + "_test_" + config['id'] + '_best_meteor_' + str(args.beam_search) + '.txt', 'a')
             checkpoint = torch.load(os.path.join(saved_models, config['id'] + '_meteor_valid'))
         else:
