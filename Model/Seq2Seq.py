@@ -338,8 +338,8 @@ if __name__ == '__main__':
             torch.save({'model_State_dict': Model.state_dict(), 'config': config}, os.path.join(saved_models, config['id'] + '_-1'))
             if config['save_every_epoch']:
                 torch.save({'model_State_dict': Model.state_dict(), 'config': config}, os.path.join(saved_models, config['id'] + '_' + str(epoch)))
-            sample_saver_eval = open(samples_fname + "_eval_" + config['id'] + '_' + str(epoch) + '.txt', 'w')
-            sample_saver_eval = open(samples_fname + "_eval_" + config['id'] + '_' + str(epoch) + '.txt', 'a')
+            sample_saver_eval = open(samples_fname + "_eval_" + config['id'] + '_ep' + str(epoch) + '.txt', 'w')
+            sample_saver_eval = open(samples_fname + "_eval_" + config['id'] + '_ep' + str(epoch) + '.txt', 'a')
             loss_mle_valid, combined_loss_valid, meteor_valid = Model.modelrun(Data=Data_valid, type_='eval', total_step=Data_valid.num_batches, ep=epoch, sample_saver=sample_saver_eval)
             if meteor_valid > config['meteor_valid']:
                 config['meteor_valid'] = meteor_valid
