@@ -4,7 +4,7 @@ import torch.nn.functional as F
 import os
 import threading as thrd
 import logging
-import time
+import re
 
 #/# Load Embeddings
 responses_for_batch = []
@@ -119,3 +119,41 @@ def Posteos_mask(res, config):
     mask_posteos = indices <= eos_positions
     res_masked = res_masked.masked_fill(~mask_posteos, mask_ind)
     return res_masked
+
+# Create model id
+def create_id(config, saved_models, reload=False, run_id=-1):
+    model_id = '{}'.format(config['dataset'])
+    if config['prebert_mask']:
+        model_id += '_preBertMask'
+    else:
+        model_id += '_nopreBertMask'
+    model_id += '_{}_{}_{}_{}'.format(config['hidden_size'], config['encoder_learning_rate'],
+                                          config['decoder_learning_rate'], config['loss'])
+    if config['loss'] == 'combine':
+        model_id += '_{}'.format(config['alpha'])
+    elif config['loss'] == 'alternate':
+        model_id += '_{}'.format(config['toggle_loss'])
+    else:
+        model_id += '_x'
+    model_id += '_{}_{}_{}_run'.format(config['output_dropout'], config['change_nll_mask'], config['sentence_embedding'])
+
+    file_ids = []
+    file_id_re = '(?<=' + model_id + ')\d+'
+    for filename in os.listdir(saved_models):
+        m = re.search(file_id_re, filename)
+        if m:
+            file_ids.append(int(m.group(0)))
+        else:
+            return model_id + '1', 1
+    if reload:
+        if run_id == -1:
+            file_id = max(file_ids)
+        else:
+            if run_id in file_ids:
+                file_id = run_id
+            else:
+                raise NameError('The model you are trying to reload is not there, check the run_id')
+    else:
+        file_id = max(file_ids) + 1
+    model_id += '{}'.format(file_id)
+    return model_id, file_id

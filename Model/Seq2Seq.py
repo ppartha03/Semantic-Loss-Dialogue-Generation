@@ -7,7 +7,7 @@ import numpy as np
 import argparse
 import os
 import logging
-import wandb
+import re
 import wandb
 sys.path.append('../Utils/')
 
@@ -18,7 +18,7 @@ parser.add_argument('--dataset', type=str, default="frames")
 parser.add_argument('--loss',type=str, default='combine') #nll, bert, combine, alternate
 parser.add_argument('--batch_size', type=int, default=8)
 parser.add_argument('--type', type=str, default='train') #train, valid, test
-parser.add_argument('--alpha',type=float, default=0.0)
+parser.add_argument('--alpha', type=float, default=0.0)
 parser.add_argument('--toggle_loss',type=float, default=0.5)
 parser.add_argument('--teacher_forcing', type=float, default=0.1)
 parser.add_argument('--change_nll_mask', action='store_true')
@@ -29,6 +29,7 @@ parser.add_argument('--output_dropout', type=float,default=0.0)
 parser.add_argument('--data_path', type=str, default="../Dataset")
 parser.add_argument('--save_every_epoch', action='store_true')
 parser.add_argument('--reload', action='store_true')
+parser.add_argument('--run_id', type=int, default=-1) #run_id of -1 means last run
 parser.add_argument('--start_epoch', type=int, default=-1)
 parser.add_argument('--num_epochs', type=int, default=100)
 parser.add_argument('--beam_search', action='store_true')
@@ -49,7 +50,7 @@ result_path = os.path.join(save_path, 'Results', args.dataset)
 sys.path.append(args.data_path)
 from WoZ_data_iterator import WoZGraphDataset
 from Frames_data_iterator import FramesGraphDataset
-from Bert_util import Load_embeddings, Bert_loss, Mask_sentence, getTopK, Posteos_mask
+from Bert_util import Load_embeddings, Bert_loss, Mask_sentence, getTopK, Posteos_mask, create_id
 # from nltk.translate.meteor_score import meteor_score
 from Eval_metric import meteor
 
@@ -115,20 +116,13 @@ config['save_every_epoch'] = args.save_every_epoch
 config['posteos_mask'] = ~args.no_posteos_mask
 config['sentence_embedding'] = args.sentence_embedding
 config['prebert_mask'] = ~args.no_prebert_mask
-config['best_mle_valid'] = 10000
-config['best_combined_loss'] = 10000
-config['meteor_valid'] = 0
-if config['prebert_mask']:
-    config['id'] = '{}_preBertMask_{}_{}_{}_{}_{}_{}_{}_{}_{}_{}'.format(args.dataset,args.hidden_size,args.encoder_learning_rate,
-                                                                      args.decoder_learning_rate,args.loss,args.alpha,
-                                                                      args.toggle_loss,args.output_dropout,args.change_nll_mask, args.sentence_embedding,
-                                                                      args.no_posteos_mask)
-else:
-    config['id'] = '{}_{}_{}_{}_{}_{}_{}_{}_{}_{}_{}'.format(args.dataset,args.hidden_size,args.encoder_learning_rate,
-                                                          args.decoder_learning_rate,args.loss,args.alpha,args.toggle_loss,
-                                                          args.output_dropout,args.change_nll_mask, args.sentence_embedding,
-                                                          args.no_posteos_mask)
-config['wandb_id'] = config['id'] + '_' + str(np.random.randint(10000))
+config['best_mle_valid'] = 10000; config['best_mle_valid_epoch'] = 0
+config['best_combined_loss'] = 10000; config['best_combined_loss_epoch'] = 0
+config['meteor_valid'] = 0; config['meteor_valid_epoch'] = 0
+
+# Create model id
+config['id'], config['run_id'] = create_id(config, saved_models, args.reload, args.run_id)
+config['wandb_id'] = config['id'] + '_' + str(np.random.randint(10000)) # used for resuming
 
 config['weights'] = np.hstack([np.array([1,1,1,0]),np.ones(config['input_size']-4)])
 config['pad_index'] = 3
@@ -344,12 +338,13 @@ if __name__ == '__main__':
             torch.save({'model_State_dict': Model.state_dict(), 'config': config}, os.path.join(saved_models, config['id'] + '_-1'))
             if config['save_every_epoch']:
                 torch.save({'model_State_dict': Model.state_dict(), 'config': config}, os.path.join(saved_models, config['id'] + '_' + str(epoch)))
-            sample_saver_eval = open(samples_fname + "_eval_" + config['id'] + str(epoch) + '.txt', 'w')
-            sample_saver_eval = open(samples_fname + "_eval_" + config['id'] + str(epoch) + '.txt', 'a')
+            sample_saver_eval = open(samples_fname + "_eval_" + config['id'] + '_' + str(epoch) + '.txt', 'w')
+            sample_saver_eval = open(samples_fname + "_eval_" + config['id'] + '_' + str(epoch) + '.txt', 'a')
             loss_mle_valid, combined_loss_valid, meteor_valid = Model.modelrun(Data=Data_valid, type_='eval', total_step=Data_valid.num_batches, ep=epoch, sample_saver=sample_saver_eval)
             if meteor_valid > config['meteor_valid']:
                 config['meteor_valid'] = meteor_valid
                 wandb.config.update({'meteor_valid':meteor_valid}, allow_val_change=True)
+                wandb.config.update({'meteor_valid_epoch': epoch}, allow_val_change=True)
                 torch.save({'model_State_dict': Model.state_dict(), 'config': config},
                            os.path.join(saved_models, config['id'] + '_meteor_valid'))
                 #save the best model to wandb
@@ -358,6 +353,7 @@ if __name__ == '__main__':
             if loss_mle_valid < config['best_mle_valid']:
                 config['best_mle_valid'] = loss_mle_valid
                 wandb.config.update({'best_mle_valid':loss_mle_valid}, allow_val_change=True)
+                wandb.config.update({'best_mle_valid_epoch': epoch}, allow_val_change=True)
                 torch.save({'model_State_dict': Model.state_dict(), 'config': config},
                            os.path.join(saved_models, config['id'] + '_best_mle_valid'))
                 #save the best model to wandb
@@ -366,6 +362,7 @@ if __name__ == '__main__':
             if combined_loss_valid < config['best_combined_loss']:
                 config['best_combined_loss'] = combined_loss_valid
                 wandb.config.update({'best_combined_loss':combined_loss_valid}, allow_val_change=True)
+                wandb.config.update({'best_combined_loss_epoch': epoch}, allow_val_change=True)
                 torch.save({'model_State_dict': Model.state_dict(), 'config': config},
                            os.path.join(saved_models, config['id'] + '_best_combined_loss'))
                 #save the best model to wandb
