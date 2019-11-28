@@ -139,13 +139,17 @@ def create_id(config, saved_models, reload=False, run_id=-1):
 
     file_ids = []
     file_id_re = '(?<=' + model_id + ')\d+'
+
     for filename in os.listdir(saved_models):
         m = re.search(file_id_re, filename)
         if m:
             file_ids.append(int(m.group(0)))
-        else:
-            return model_id + '1', 1
-    if reload:
+
+    if not reload and not file_ids:
+        return model_id + '1', 1
+    elif reload and not file_ids:
+        raise NameError('No saved models exist')
+    elif reload:
         if run_id == -1:
             file_id = max(file_ids)
         else:
@@ -155,5 +159,6 @@ def create_id(config, saved_models, reload=False, run_id=-1):
                 raise NameError('The model you are trying to reload is not there, check the run_id')
     else:
         file_id = max(file_ids) + 1
+
     model_id += '{}'.format(file_id)
     return model_id, file_id

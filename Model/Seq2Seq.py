@@ -128,6 +128,7 @@ config['weights'] = np.hstack([np.array([1,1,1,0]),np.ones(config['input_size']-
 config['pad_index'] = 3
 config['eos_index'] = 1
 config['epoch'] = 0
+
 torch.manual_seed(config['seed'])
 np.random.seed(config['seed'])
 # 1 => account for loss
@@ -320,6 +321,7 @@ if __name__ == '__main__':
         config["device"] = device
         wandb.init(project=config["wandb_project"], resume=config['wandb_id'], allow_val_change=True)
     elif args.type=='train':
+        torch.save({'model_State_dict': Model.state_dict(), 'config': config}, os.path.join(saved_models, config['id'] + '_-1'))
         wandb.init(project=config["wandb_project"], name=config['id'], id=config['wandb_id'], allow_val_change=True)
 
     if args.type == 'train':
