@@ -132,7 +132,7 @@ def create_id(config, saved_models, reload=False, run_id=-1):
     if config['loss'] == 'combine':
         model_id += '_{}'.format(config['alpha'])
     elif config['loss'] == 'alternate':
-        model_id += '_{}'.format(config['toggle_loss'])
+        model_id += '_{}'.format(config['toggle'])
     else:
         model_id += '_x'
     model_id += '_{}_{}_{}_run'.format(config['output_dropout'], config['change_nll_mask'], config['sentence_embedding'])
