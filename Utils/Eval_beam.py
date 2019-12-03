@@ -36,7 +36,7 @@ def Metrics(file_loc):
         beam = []
         tar = D[i+args.topk+1].split()[2:]
         for j in range(1,args.topk+1):
-            beam += [D[i+j].split()[2:]]
+            beam += [D[i+j].split()[2:] + ['.']]
         if '<eos>' in tar:
             ind_tar = tar.index('<eos>')
         else:
