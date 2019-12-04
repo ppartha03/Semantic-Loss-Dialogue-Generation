@@ -27,7 +27,7 @@ parser.add_argument('--change_nll_mask', action='store_true')
 parser.add_argument('--save_base', type=str, default='..')
 parser.add_argument('--encoder_learning_rate', type=float, default=0.004)
 parser.add_argument('--decoder_learning_rate', type=float, default=0.004)
-parser.add_argument('--output_dropout', type=float,default=0.0)
+parser.add_argument('--output_dropout', type=float,default=0.5)
 parser.add_argument('--data_path', type=str, default="../Dataset")
 parser.add_argument('--save_every_epoch', action='store_true')
 parser.add_argument('--reload', action='store_true')
@@ -298,16 +298,20 @@ if __name__ == '__main__':
 
     if args.type == 'test':
         if args.validation_model == 'best_combined':
-            sample_saver_test = open(samples_fname + "_test_" + config['id'] + '_best_combined.txt', 'w')
-            sample_saver_test = open(samples_fname + "_test_" + config['id'] + '_best_combined.txt', 'a')
+            sample_saver_test = open(samples_fname + "_test_" + str(args.topk) + '_' + str(args.beam_width) + '_' + config['id'] + '_best_combined.txt', 'w')
+            sample_saver_test = open(samples_fname + "_test_" + str(args.topk) + '_' + str(args.beam_width) + '_' + config['id'] + '_best_combined.txt', 'a')
             checkpoint = torch.load(os.path.join(saved_models, config['id'] + '_best_combined_loss'))
         elif args.validation_model == 'best_mle':
-            sample_saver_test = open(samples_fname + "_test_" + config['id'] + '_best_mle.txt', 'w')
-            sample_saver_test = open(samples_fname + "_test_" + config['id'] + '_best_mle.txt', 'a')
+            sample_saver_test = open(samples_fname + "_test_" + str(args.topk) + '_' + str(args.beam_width) + '_' + config['id'] + '_best_mle.txt', 'w')
+            sample_saver_test = open(samples_fname + "_test_" + str(args.topk) + '_' + str(args.beam_width) + '_' + config['id'] + '_best_mle.txt', 'a')
             checkpoint = torch.load(os.path.join(saved_models, config['id'] + '_best_mle_valid'))
+        elif str(args.validation_model) == 'best_meteor':
+            sample_saver_test = open(samples_fname + "_test_" + str(args.topk) + '_' + str(args.beam_width) + '_' + config['id'] + '_best_mle.txt', 'w')
+            sample_saver_test = open(samples_fname + "_test_" + str(args.topk) + '_' + str(args.beam_width) + '_' + config['id'] + '_best_mle.txt', 'a')
+            checkpoint = torch.load(os.path.join(saved_models, config['id'] + '_meteor_valid'))
         else:
-            sample_saver_test = open(samples_fname + "_test_" + config['id'] + '_' + str(args.start_epoch) + '.txt', 'w')
-            sample_saver_test = open(samples_fname + "_test_" + config['id'] + '_' + str(args.start_epoch) + '.txt', 'a')
+            sample_saver_test = open(samples_fname + "_test_" + str(args.topk) + '_' + str(args.beam_width) + '_' + config['id'] + '_' + str(args.start_epoch) + '.txt', 'w')
+            sample_saver_test = open(samples_fname + "_test_" + str(args.topk) + '_' + str(args.beam_width) + '_' + config['id'] + '_' + str(args.start_epoch) + '.txt', 'a')
             checkpoint = torch.load(os.path.join(saved_models, config['id'] + '_' + str(args.start_epoch)))
         Model.load_state_dict(checkpoint['model_State_dict'])
         Model.modelrun(Data=Data_test, type_='valid', total_step=Data_test.num_batches, ep=0,sample_saver=sample_saver_test)
