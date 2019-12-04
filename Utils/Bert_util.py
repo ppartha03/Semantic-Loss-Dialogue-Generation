@@ -151,7 +151,7 @@ def Posteos_mask(res, config):
     return res_masked
 
 # Create model id
-def create_id(config, saved_models, reload=False, run_id=-1):
+def create_id(config, saved_models, reload=False, run_id=-1, training_type):
     model_id = '{}'.format(config['dataset'])
     if config['prebert_mask']:
         model_id += '_preBertMask'
@@ -175,20 +175,30 @@ def create_id(config, saved_models, reload=False, run_id=-1):
         if m:
             file_ids.append(int(m.group(0)))
 
-    if not reload and not file_ids:
-        return model_id + '1', 1
-    elif reload and not file_ids:
-        raise NameError('No saved models exist')
-    elif reload:
-        if run_id == -1:
-            file_id = max(file_ids)
-        else:
-            if run_id in file_ids:
-                file_id = run_id
+    if training_type == 'train':
+        if not reload and not file_ids:
+            return model_id + '1', 1
+        elif reload and not file_ids:
+            raise NameError('No saved models exist')
+        elif reload:
+            if run_id == -1:
+                file_id = max(file_ids)
             else:
-                raise NameError('The model you are trying to reload is not there, check the run_id')
+                if run_id in file_ids:
+                    file_id = run_id
+                else:
+                    raise NameError('The model you are trying to reload is not there, check the run_id')
+        else:
+            file_id = max(file_ids) + 1
     else:
-        file_id = max(file_ids) + 1
+        if not file_ids:
+            raise NameError('No saved models exist')
+        elif run_id == -1:
+            file_id = max(file_ids)
+        elif run_id in file_ids:
+            file_id = run_id
+        else:
+            raise NameError('The model you are trying to reload is not there, check the run_id')
 
     model_id += '{}'.format(file_id)
     return model_id, file_id

@@ -40,7 +40,7 @@ parser.add_argument('--sentence_embedding', type=str, default='mean') #calculate
 #if true, don't apply the mask before generating the Bert sentence (allow the model to generate masked tokens, and then mask them during the embedding calculation)
 parser.add_argument('--no_prebert_mask', action='store_true')
 parser.add_argument('--wandb_project', type=str, default='metadial')
-parser.add_argument('--validation_model', type=str, default='start_epoch') #which model to use for validation/test, 'best_mle' or 'best_combined' or the model of epoch 'start_epoch'
+parser.add_argument('--validation_model', type=str, default='start_epoch') #which model to use for validation/test, 'best_mle' or 'best_combined', 'best_meteor' or the model of epoch 'start_epoch'
 
 args = parser.parse_args()
 
@@ -121,7 +121,7 @@ config['best_combined_loss'] = 10000; config['best_combined_loss_epoch'] = 0
 config['meteor_valid'] = 0; config['meteor_valid_epoch'] = 0
 
 # Create model id
-config['id'], config['run_id'] = create_id(config, saved_models, args.reload, args.run_id)
+config['id'], config['run_id'] = create_id(config, saved_models, args.reload, args.run_id, args.type)
 config['wandb_id'] = config['id'] + '_' + str(np.random.randint(10000)) # used for resuming
 
 config['weights'] = np.hstack([np.array([1,1,1,0]),np.ones(config['input_size']-4)])
