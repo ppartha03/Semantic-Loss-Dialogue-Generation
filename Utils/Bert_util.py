@@ -5,9 +5,39 @@ import os
 import threading as thrd
 import logging
 import re
+import time
+import operator
+import torch.nn as nn
+from queue import PriorityQueue
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 #/# Load Embeddings
 responses_for_batch = []
+
+class BeamSearchNode(object):
+    def __init__(self, hiddenstate, previousNode, wordId, logProb, length):
+        '''
+        :param hiddenstate:
+        :param previousNode:
+        :param wordId:
+        :param logProb:
+        :param length:
+        '''
+        self.h = hiddenstate
+        self.prevNode = previousNode
+        self.wordid = wordId
+        self.logp = logProb
+        self.leng = length
+
+    def eval(self, alpha=1.0):
+        reward = 0
+        # Add here a function for shaping a reward
+
+        return self.logp / float(self.leng - 1 + 1e-6) + alpha * reward
+
+    def __lt__(self, other):
+        return self.logp < other.logp
+
 def getTopK(dec_list, topk = 5, Vocab_inv = None, batch_size = 1,seq_length = 10, thrd_nmb=2):
     global responses_for_batch
     # walk over each step in sequence

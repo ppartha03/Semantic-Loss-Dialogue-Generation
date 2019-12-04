@@ -6,7 +6,7 @@ from nltk.translate.meteor_score import meteor_score
 import math
 import argparse
 import _pickle as cPickle
-# from rouge import Rouge
+from rouge import Rouge
 import logging
 
 bleu_met = nltk.translate.bleu_score.sentence_bleu
