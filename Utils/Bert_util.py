@@ -11,7 +11,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 responses_for_batch = []
 
 class BeamSearchNode(object):
-    def __init__(self, hiddenstate, previousNode, wordId, logProb, length):
+    def __init__(self, hiddenstate, previousNode, wordId, logProb, length, dec_inp):
         '''
         :param hiddenstate:
         :param previousNode:

@@ -19,7 +19,7 @@ parser.add_argument('--hidden_size', type=int, default=128)
 parser.add_argument('--dataset', type=str, default="frames")
 parser.add_argument('--loss',type=str, default='combine') #nll, bert, combine, alternate
 parser.add_argument('--batch_size', type=int, default=8)
-parser.add_argument('--type', type=str, default='train') #train, valid, test
+parser.add_argument('--type', type=str, default='train') #valid or test
 parser.add_argument('--alpha', type=float, default=0.0)
 parser.add_argument('--toggle_loss',type=float, default=0.5)
 parser.add_argument('--teacher_forcing', type=float, default=0.1)
@@ -29,11 +29,8 @@ parser.add_argument('--encoder_learning_rate', type=float, default=0.004)
 parser.add_argument('--decoder_learning_rate', type=float, default=0.004)
 parser.add_argument('--output_dropout', type=float,default=0.5)
 parser.add_argument('--data_path', type=str, default="../Dataset")
-parser.add_argument('--save_every_epoch', action='store_true')
-parser.add_argument('--reload', action='store_true')
 parser.add_argument('--run_id', type=int, default=-1) #run_id of -1 means last run
 parser.add_argument('--start_epoch', type=int, default=-1)
-parser.add_argument('--num_epochs', type=int, default=100)
 parser.add_argument('--topk', type=int, default=5)
 parser.add_argument('--seed', type=int, default=100)
 parser.add_argument('--beam_width',type = int,default = 5)
@@ -43,6 +40,7 @@ parser.add_argument('--sentence_embedding', type=str, default='mean') #calculate
 parser.add_argument('--no_prebert_mask', action='store_true')
 parser.add_argument('--wandb_project', type=str, default='metadial')
 parser.add_argument('--validation_model', type=str, default='best_meteor') #which model to use for validation/test, 'best_mle' or 'best_combined', 'best_meteor' or the model of epoch 'start_epoch'
+parser.add_argument('--bert_finetune', action='store_true') #if true, finetune a trained model using bert
 args = parser.parse_args()
 
 save_path = os.path.join(args.save_base, 'MetaDial')
@@ -53,7 +51,6 @@ from WoZ_data_iterator import WoZGraphDataset
 from Frames_data_iterator import FramesGraphDataset
 from Bert_util import Load_embeddings, Bert_loss, Mask_sentence, getTopK, Posteos_mask, create_id, BeamSearchNode
 
-from nltk.translate.meteor_score import meteor_score
 from queue import PriorityQueue
 
 if not os.path.exists(os.path.join(result_path, 'Samples')):
@@ -66,10 +63,6 @@ if not os.path.exists(saved_models):
 log_path = os.path.join(save_path, 'logs')
 if not os.path.exists(log_path):
     os.makedirs(log_path)
-
-# tensorboard_path = os.path.join(save_path, 'tensorboard')
-# if not os.path.exists(tensorboard_path):
-#     os.makedirs(tensorboard_path)
 
 fname = os.path.join(result_path, 'Log.txt')
 samples_fname = os.path.join(result_path, 'Samples')
@@ -128,17 +121,13 @@ config['toggle'] = args.toggle_loss
 config['loss'] = args.loss
 config['dataset'] = args.dataset
 config['device'] = device
-config['save_every_epoch'] = args.save_every_epoch
 config['posteos_mask'] = ~args.no_posteos_mask
 config['sentence_embedding'] = args.sentence_embedding
 config['prebert_mask'] = ~args.no_prebert_mask
-config['best_mle_valid'] = 10000; config['best_mle_valid_epoch'] = 0
-config['best_combined_loss'] = 10000; config['best_combined_loss_epoch'] = 0
-config['meteor_valid'] = 0; config['meteor_valid_epoch'] = 0
+config['bertFinetune'] = args.bertFinetune
 
 # Create model id
 config['id'], config['run_id'] = create_id(config, saved_models, args.reload, args.run_id, args.type)
-config['wandb_id'] = config['id'] + '_' + str(np.random.randint(10000)) # used for resuming
 
 config['weights'] = np.hstack([np.array([1,1,1,0]),np.ones(config['input_size']-4)])
 config['pad_index'] = 3
@@ -171,17 +160,11 @@ class Seq2Seq(nn.Module):
 
         # self.writer = SummaryWriter(os.path.join(config['tensorboard_path'], config['id']))
 
-    def modelrun(self, Data='', type_='train', total_step=200, ep=0, sample_saver=''):
-        loss_mle_inf = 0.
-        loss_bert_inf = 0.
-        train_loss_inf = 0.
-
+    def modelrun(self, Data='', total_step=200, sample_saver=''):
         self.Data = Data
         self.sample_saver = sample_saver
-        meteor_score_valid = 0.
         count_examples = 0.
         for i in range(total_step):
-            seq_loss_a = 0.
             batch_size = self.Data[i]['input'].shape[0]
             count_examples += batch_size
             hidden_enc = (torch.zeros(self.config['num_layers'], batch_size, self.config['hidden_size'], device=self.config['device']), torch.zeros(self.config['num_layers'], batch_size, self.config['hidden_size'], device=self.config['device']))
@@ -190,10 +173,8 @@ class Seq2Seq(nn.Module):
             decoder_input = torch.from_numpy(self.Data[i]['target']).to(self.config['device']).view(batch_size,self.config['sequence_length'],self.config['input_size'])
 
             # if type_ == 'valid':
-            response_ = []
             context_ = []
             target_response = []
-            response_premasked = [] #the response generated by choosing only unmasked words
             # Generate random masks
             print(i,'/',total_step)
             logging.info(str(i) + '/' +  str(total_step))
@@ -231,7 +212,7 @@ class Seq2Seq(nn.Module):
                     decoder_output, decoder_hidden = self.Decoder(decoder_input_, decoder_hidden)
                     log_prob, indexes = torch.topk(decoder_output.view(-1), args.beam_width)
                     nextnodes = []
-                    logging.info(str(indexes_))
+                    logging.info(str(indexes))
                     for new_k in range(args.beam_width):
                         decoded_t = indexes[new_k].item()
                         print(decoded_t)
@@ -263,35 +244,16 @@ class Seq2Seq(nn.Module):
                 decoded_batch.append(utterances)
             con = torch.cat(context_, dim=1)
             tar = torch.cat(target_response, dim=1)
-
-            if type_ !='train':
-                for c_index in range(con.shape[0]):
-                    c = ' '.join([self.Data.Vocab_inv[idx.item()] for idx in con[c_index]])
-                    t_list = [self.Data.Vocab_inv[idx.item()] for idx in tar[c_index]]
-                    t = ' '.join(t_list)
-                    r = ''
-                    for beam_ind in range(len(decoded_batch[c_index])):
-                        res = decoded_batch[c_index][beam_ind]
-                        res_str = ' '.join([self.Data.Vocab_inv[idx] for idx in res])
-                        r += 'Model_Response_'+str(beam_ind)+': '+res_str+'\n'
-                    self.sample_saver.write('Context: '+ c + '\n' + r + 'Target: ' + t + '\n\n')
-            if type_ == 'train':
-                self.optimizer.zero_grad()
-                self.optimizer_dec.zero_grad()
-
-                train_loss.backward()
-                for O_ in self.Opts:
-                    O_.step()
-
-        if type_ == 'eval':
-            logging.info(
-                f"Train:   Loss_MLE_eval: {loss_mle_inf:.4f},  Loss_Bert_eval: {loss_bert_inf:.4f}, Meteor_score_valid : {meteor_score_valid:.4f}\n")
-            wandb.log({'Loss_MLE_eval': loss_mle_inf, 'Loss_Bert_eval': loss_bert_inf, 'Meteor_score_valid': meteor_score_valid,'train_loss_eval': train_loss_inf, 'global_step':ep})
-            return loss_mle_inf, train_loss_inf, meteor_score_valid/count_examples
-        if type_ == 'train':
-            logging.info(
-                f"Train:   Loss_MLE_train: {loss_mle_inf:.4f},  Loss_MLE_train: {loss_bert_inf:.4f}\n")
-            wandb.log({'Loss_MLE_train': loss_mle_inf, 'Loss_Bert_train': loss_bert_inf, 'train_loss_train': train_loss_inf, 'global_step':ep})
+            for c_index in range(con.shape[0]):
+                c = ' '.join([self.Data.Vocab_inv[idx.item()] for idx in con[c_index]])
+                t_list = [self.Data.Vocab_inv[idx.item()] for idx in tar[c_index]]
+                t = ' '.join(t_list)
+                r = ''
+                for beam_ind in range(len(decoded_batch[c_index])):
+                    res = decoded_batch[c_index][beam_ind]
+                    res_str = ' '.join([self.Data.Vocab_inv[idx] for idx in res])
+                    r += 'Model_Response_'+str(beam_ind)+': '+res_str+'\n'
+                self.sample_saver.write('Context: '+ c + '\n' + r + 'Target: ' + t + '\n\n')
 
 
 if __name__ == '__main__':
@@ -309,6 +271,8 @@ if __name__ == '__main__':
 
     Model = Seq2Seq(config)
 
+    if args.bertFinetune:
+        config['id'] += "_meteor_valid_bertFinetune"
     if args.type == 'test':
         if args.validation_model == 'best_combined':
             sample_saver_test = open(samples_fname + "_test_" + str(args.topk) + '_' + str(args.beam_width) + '_' + config['id'] + '_best_combined.txt', 'w')
