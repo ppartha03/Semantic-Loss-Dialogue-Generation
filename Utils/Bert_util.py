@@ -5,10 +5,6 @@ import os
 import threading as thrd
 import logging
 import re
-import time
-import operator
-import torch.nn as nn
-from queue import PriorityQueue
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
 #/# Load Embeddings
@@ -28,9 +24,10 @@ class BeamSearchNode(object):
         self.wordid = wordId
         self.logp = logProb
         self.leng = length
+        self.decoder_input_d = dec_inp
 
     def eval(self, alpha=1.0):
-        reward = 0
+        reward = torch.rand(1)
         # Add here a function for shaping a reward
 
         return self.logp / float(self.leng - 1 + 1e-6) + alpha * reward
@@ -151,7 +148,7 @@ def Posteos_mask(res, config):
     return res_masked
 
 # Create model id
-def create_id(config, saved_models, reload=False, run_id=-1, training_type):
+def create_id(config, saved_models, reload=False, run_id=-1, training_type='train'):
     model_id = '{}'.format(config['dataset'])
     if config['prebert_mask']:
         model_id += '_preBertMask'
