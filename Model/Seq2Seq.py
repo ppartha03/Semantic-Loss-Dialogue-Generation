@@ -7,7 +7,7 @@ import numpy as np
 import argparse
 import os
 import logging
-import wandb
+import re
 import wandb
 sys.path.append('../Utils/')
 
@@ -18,7 +18,7 @@ parser.add_argument('--dataset', type=str, default="frames")
 parser.add_argument('--loss',type=str, default='combine') #nll, bert, combine, alternate
 parser.add_argument('--batch_size', type=int, default=8)
 parser.add_argument('--type', type=str, default='train') #train, valid, test
-parser.add_argument('--alpha',type=float, default=0.0)
+parser.add_argument('--alpha', type=float, default=0.0)
 parser.add_argument('--toggle_loss',type=float, default=0.5)
 parser.add_argument('--teacher_forcing', type=float, default=0.1)
 parser.add_argument('--change_nll_mask', action='store_true')
@@ -29,16 +29,16 @@ parser.add_argument('--output_dropout', type=float,default=0.0)
 parser.add_argument('--data_path', type=str, default="../Dataset")
 parser.add_argument('--save_every_epoch', action='store_true')
 parser.add_argument('--reload', action='store_true')
+parser.add_argument('--run_id', type=int, default=-1) #run_id of -1 means last run
 parser.add_argument('--start_epoch', type=int, default=-1)
 parser.add_argument('--num_epochs', type=int, default=100)
-parser.add_argument('--beam_search', action='store_true')
-parser.add_argument('--topk', type=int, default=5)
 parser.add_argument('--seed', type=int, default=100)
 parser.add_argument('--no_posteos_mask', action='store_true') #if true, don't mask the words generated after the <eos> token
+parser.add_argument('--sentence_embedding', type=str, default='mean') #calculate sentence embedding using "mean" or "sum" of bert embeddings
 #if true, don't apply the mask before generating the Bert sentence (allow the model to generate masked tokens, and then mask them during the embedding calculation)
 parser.add_argument('--no_prebert_mask', action='store_true')
 parser.add_argument('--wandb_project', type=str, default='metadial')
-parser.add_argument('--validation_model', type=str, default='start_epoch') #which model to use for validation/test, 'best_mle' or 'best_combined' or the model of epoch 'start_epoch'
+parser.add_argument('--validation_model', type=str, default='best_meteor') #which model to use for validation/test, 'best_mle' or 'best_combined', 'best_meteor' or the model of epoch 'start_epoch'
 
 args = parser.parse_args()
 
@@ -48,8 +48,9 @@ result_path = os.path.join(save_path, 'Results', args.dataset)
 sys.path.append(args.data_path)
 from WoZ_data_iterator import WoZGraphDataset
 from Frames_data_iterator import FramesGraphDataset
-from Bert_util import Load_embeddings, Bert_loss, Mask_sentence, getTopK
-from nltk.translate.meteor_score import meteor_score
+from Bert_util import Load_embeddings, Bert_loss, Mask_sentence, Posteos_mask, create_id
+# from nltk.translate.meteor_score import meteor_score
+from Eval_metric import meteor
 
 if not os.path.exists(os.path.join(result_path, 'Samples')):
     os.makedirs(os.path.join(result_path, 'Samples'))
@@ -111,24 +112,21 @@ config['dataset'] = args.dataset
 config['device'] = device
 config['save_every_epoch'] = args.save_every_epoch
 config['posteos_mask'] = ~args.no_posteos_mask
+config['sentence_embedding'] = args.sentence_embedding
 config['prebert_mask'] = ~args.no_prebert_mask
-config['best_mle_valid'] = 10000
-config['best_combined_loss'] = 10000
-config['meteor_valid'] = 0
-if config['prebert_mask']:
-    config['id'] = '{}_preBertMask_{}_{}_{}_{}_{}_{}_{}_{}_{}'.format(args.dataset,args.hidden_size,args.encoder_learning_rate,
-                                                                         args.decoder_learning_rate,args.loss,args.alpha,
-                                                                         args.toggle_loss,args.output_dropout,args.change_nll_mask, args.no_posteos_mask)
-else:
-    config['id'] = '{}_{}_{}_{}_{}_{}_{}_{}_{}_{}'.format(args.dataset,args.hidden_size,args.encoder_learning_rate,
-                                                             args.decoder_learning_rate,args.loss,args.alpha,args.toggle_loss,
-                                                             args.output_dropout,args.change_nll_mask, args.no_posteos_mask)
-config['wandb_id'] = config['id'] + '_' + str(np.random.randint(1000))
+config['best_mle_valid'] = 10000; config['best_mle_valid_epoch'] = 0
+config['best_combined_loss'] = 10000; config['best_combined_loss_epoch'] = 0
+config['meteor_valid'] = 0; config['meteor_valid_epoch'] = 0
+
+# Create model id
+config['id'], config['run_id'] = create_id(config, saved_models, args.reload, args.run_id, args.type)
+config['wandb_id'] = config['id'] + '_' + str(np.random.randint(10000)) # used for resuming
 
 config['weights'] = np.hstack([np.array([1,1,1,0]),np.ones(config['input_size']-4)])
 config['pad_index'] = 3
 config['eos_index'] = 1
 config['epoch'] = 0
+
 torch.manual_seed(config['seed'])
 np.random.seed(config['seed'])
 # 1 => account for loss
@@ -159,11 +157,13 @@ class Seq2Seq(nn.Module):
     def modelrun(self, Data='', type_='train', total_step=200, ep=0, sample_saver=''):
         loss_mle_inf = 0.
         loss_bert_inf = 0.
+        loss_reinforce_inf = 0.
         train_loss_inf = 0.
 
         self.Data = Data
         self.sample_saver = sample_saver
         meteor_score_valid = 0.
+        cnt = 0.
         for i in range(total_step):
             seq_loss_a = 0.
             batch_size = self.Data[i]['input'].shape[0]
@@ -220,14 +220,16 @@ class Seq2Seq(nn.Module):
             loss_mle_inf += loss.item()/total_step#seq_loss_a.item()/batch_size/self.Data[i]['decoder_length']
 
             if config['prebert_mask']:
-                loss_bert = Bert_loss(self.Bert_embedding(res_premasked), self.Bert_embedding(tar))
+                res_premasked = Posteos_mask(res_premasked, config)
+                loss_bert = Bert_loss(self.Bert_embedding(res_premasked), self.Bert_embedding(tar), config['sentence_embedding'])
             else:
                 res_postmasked = Mask_sentence(res, mask, config)
-                loss_bert = Bert_loss(self.Bert_embedding(res_postmasked), self.Bert_embedding(tar))
+                loss_bert = Bert_loss(self.Bert_embedding(res_postmasked), self.Bert_embedding(tar), config['sentence_embedding'])
             loss_bert_inf += loss_bert.item()/total_step
 
             dec = torch.cat(dec_list, dim=1)
             reinforce_loss = torch.mean(-torch.mul(dec, loss_bert))
+            loss_reinforce_inf += reinforce_loss.item()/total_step
 
             if args.loss == 'nll':
                 train_loss = loss
@@ -242,32 +244,24 @@ class Seq2Seq(nn.Module):
                     train_loss = reinforce_loss
             train_loss_inf += train_loss.item() / total_step
 
-            if (type_ == 'test' or type_ == 'valid') and args.beam_search:
-                beam = getTopK(dec_list, args.topk, self.Data.Vocab_inv, batch_size,self.Data[i]['decoder_length']-1)
             if type_ !='train':
                 for c_index in range(con.shape[0]):
                     c = ' '.join([self.Data.Vocab_inv[idx.item()] for idx in con[c_index]])
                     t_list = [self.Data.Vocab_inv[idx.item()] for idx in tar[c_index]]
                     t = ' '.join(t_list)
-                    if ( not args.beam_search ):
-                        r_list = [self.Data.Vocab_inv[idx.item()] for idx in res[c_index]]
-                        r = ' '.join(r_list)
-                        if '<eos>' in t_list:
-                            ind_tar = t_list.index('<eos>')
-                        else:
-                            ind_tar = -1
-                        if '<eos>' in r_list:
-                            ind_mod = r_list.index('<eos>')
-                        else:
-                            ind_mod = -1
-                        meteor_score_valid += meteor_score(' '.join(r_list[:ind_mod]),' '.join(t_list[1:ind_tar]))/(float(con.shape[0])*total_step)
-                        self.sample_saver.write('Context: '+ c + '\n' + 'Model_Response: ' + r + '\n' + 'Target: ' + t + '\n\n')
-                    else:
-                        r = ''
-                        for beam_ind in range(len(beam[c_index])):
-                            beam_res,score = beam[c_index][beam_ind]
-                            r += 'Model_Response_'+str(beam_ind)+': '+' '.join(beam_res)+'\n'
-                        self.sample_saver.write('Context: '+ c + '\n' + r + 'Target: ' + t + '\n\n')
+                    cnt += 1
+                    r_list = [self.Data.Vocab_inv[idx.item()] for idx in res[c_index]]
+                    r = ' '.join(r_list)
+                    # if '<eos>' in t_list:
+                    #     ind_tar = t_list.index('<eos>')
+                    # else:
+                    #     ind_tar = -1
+                    # if '<eos>' in r_list:
+                    #     ind_mod = r_list.index('<eos>')
+                    # else:
+                    #     ind_mod = -1
+                    # meteor_score_valid += meteor_score(' '.join(r_list[:ind_mod]),' '.join(t_list[1:ind_tar]))
+                    self.sample_saver.write('Context: '+ c + '\n' + 'Model_Response: ' + r + '\n' + 'Target: ' + t + '\n\n')
 
             if type_ == 'train':
                 self.optimizer.zero_grad()
@@ -278,14 +272,21 @@ class Seq2Seq(nn.Module):
                     O_.step()
 
         if type_ == 'eval':
+            # meteor_score_valid = meteor_score_valid / cnt * 100
+            self.sample_saver.close()
+            meteor_score_valid = meteor(sample_saver.name)*100.
             logging.info(
-                f"Train:   Loss_MLE_eval: {loss_mle_inf:.4f},  Loss_Bert_eval: {loss_bert_inf:.4f}, Meteor_score_valid : {meteor_score_valid:.4f}\n")
-            wandb.log({'Loss_MLE_eval': loss_mle_inf, 'Loss_Bert_eval': loss_bert_inf, 'Meteor_score_valid': meteor_score_valid,'train_loss_eval': train_loss_inf, 'global_step':ep})
+                f"Valid:   Loss_MLE_eval: {loss_mle_inf:.4f},  Loss_Bert_eval: {loss_bert_inf:.4f}, 'meteor_score': {meteor_score_valid:.2f}\n")
+            wandb.log({'Loss_MLE_eval': loss_mle_inf, 'Loss_Bert_eval': loss_bert_inf,
+                       'train_loss_eval': train_loss_inf, 'reinforce_loss_eval': loss_reinforce_inf,
+                       'meteor_score': meteor_score_valid, 'global_step':ep})
             return loss_mle_inf, train_loss_inf, meteor_score_valid
         if type_ == 'train':
             logging.info(
-                f"Train:   Loss_MLE_train: {loss_mle_inf:.4f},  Loss_MLE_train: {loss_bert_inf:.4f}\n")
-            wandb.log({'Loss_MLE_train': loss_mle_inf, 'Loss_Bert_train': loss_bert_inf, 'train_loss_train': train_loss_inf, 'global_step':ep})
+                f"Train:   Loss_MLE_train: {loss_mle_inf:.4f},  Loss_Bert_train: {loss_bert_inf:.4f}\n")
+            wandb.log({'Loss_MLE_train': loss_mle_inf, 'Loss_Bert_train': loss_bert_inf,
+                       'train_loss_train': train_loss_inf, 'reinforce_loss_train': loss_reinforce_inf,
+                       'global_step':ep})
 
 
 if __name__ == '__main__':
@@ -309,6 +310,7 @@ if __name__ == '__main__':
         config["device"] = device
         wandb.init(project=config["wandb_project"], resume=config['wandb_id'], allow_val_change=True)
     elif args.type=='train':
+        torch.save({'model_State_dict': Model.state_dict(), 'config': config}, os.path.join(saved_models, config['id'] + '_-1'))
         wandb.init(project=config["wandb_project"], name=config['id'], id=config['wandb_id'], allow_val_change=True)
 
     if args.type == 'train':
@@ -327,29 +329,31 @@ if __name__ == '__main__':
             torch.save({'model_State_dict': Model.state_dict(), 'config': config}, os.path.join(saved_models, config['id'] + '_-1'))
             if config['save_every_epoch']:
                 torch.save({'model_State_dict': Model.state_dict(), 'config': config}, os.path.join(saved_models, config['id'] + '_' + str(epoch)))
-            sample_saver_eval = open(samples_fname + "_eval_" + config['id'] + str(epoch) + '.txt', 'w')
-            sample_saver_eval = open(samples_fname + "_eval_" + config['id'] + str(epoch) + '.txt', 'a')
+            sample_saver_eval = open(samples_fname + "_eval_" + config['id'] + '_ep' + str(epoch) + '.txt', 'w')
+            sample_saver_eval = open(samples_fname + "_eval_" + config['id'] + '_ep' + str(epoch) + '.txt', 'a')
             loss_mle_valid, combined_loss_valid, meteor_valid = Model.modelrun(Data=Data_valid, type_='eval', total_step=Data_valid.num_batches, ep=epoch, sample_saver=sample_saver_eval)
-            meteor_valid = meteor_valid / Data_valid.num_batches
             if meteor_valid > config['meteor_valid']:
                 config['meteor_valid'] = meteor_valid
                 wandb.config.update({'meteor_valid':meteor_valid}, allow_val_change=True)
+                wandb.config.update({'meteor_valid_epoch': epoch}, allow_val_change=True)
                 torch.save({'model_State_dict': Model.state_dict(), 'config': config},
                            os.path.join(saved_models, config['id'] + '_meteor_valid'))
                 #save the best model to wandb
                 torch.save({'model_State_dict': Model.state_dict(), 'config': config},
                            os.path.join(wandb.run.dir, config['id'] + '_meteor_valid'))
             if loss_mle_valid < config['best_mle_valid']:
-                    config['best_mle_valid'] = loss_mle_valid
-                    wandb.config.update({'best_mle_valid':loss_mle_valid}, allow_val_change=True)
-                    torch.save({'model_State_dict': Model.state_dict(), 'config': config},
-                               os.path.join(saved_models, config['id'] + '_best_mle_valid'))
-                    #save the best model to wandb
-                    torch.save({'model_State_dict': Model.state_dict(), 'config': config},
-                               os.path.join(wandb.run.dir, config['id'] + '_best_mle_valid'))
+                config['best_mle_valid'] = loss_mle_valid
+                wandb.config.update({'best_mle_valid':loss_mle_valid}, allow_val_change=True)
+                wandb.config.update({'best_mle_valid_epoch': epoch}, allow_val_change=True)
+                torch.save({'model_State_dict': Model.state_dict(), 'config': config},
+                           os.path.join(saved_models, config['id'] + '_best_mle_valid'))
+                #save the best model to wandb
+                torch.save({'model_State_dict': Model.state_dict(), 'config': config},
+                           os.path.join(wandb.run.dir, config['id'] + '_best_mle_valid'))
             if combined_loss_valid < config['best_combined_loss']:
                 config['best_combined_loss'] = combined_loss_valid
                 wandb.config.update({'best_combined_loss':combined_loss_valid}, allow_val_change=True)
+                wandb.config.update({'best_combined_loss_epoch': epoch}, allow_val_change=True)
                 torch.save({'model_State_dict': Model.state_dict(), 'config': config},
                            os.path.join(saved_models, config['id'] + '_best_combined_loss'))
                 #save the best model to wandb
@@ -360,16 +364,26 @@ if __name__ == '__main__':
 
     elif args.type == 'valid':
         if args.validation_model == 'best_combined':
-            sample_saver_valid = open(samples_fname + "_valid_" + config['id'] + '_best_combined.txt', 'w')
-            sample_saver_valid = open(samples_fname + "_valid_" + config['id'] + '_best_combined.txt', 'a')
+            sample_saver_valid = open(
+                samples_fname + "_valid_" + config['id'] + '_best_combined_' + '.txt', 'w')
+            sample_saver_valid = open(
+                samples_fname + "_valid_" + config['id'] + '_best_combined_' + '.txt', 'a')
             checkpoint = torch.load(os.path.join(saved_models, config['id'] + '_best_combined_loss'))
         elif args.validation_model == 'best_mle':
-            sample_saver_valid = open(samples_fname + "_valid_" + config['id'] + '_best_mle.txt', 'w')
-            sample_saver_valid = open(samples_fname + "_valid_" + config['id'] + '_best_mle.txt', 'a')
+            sample_saver_valid = open(
+                samples_fname + "_valid_" + config['id'] + '_best_mle_' + '.txt', 'w')
+            sample_saver_valid = open(
+                samples_fname + "_valid_" + config['id'] + '_best_mle_' + '.txt', 'a')
             checkpoint = torch.load(os.path.join(saved_models, config['id'] + '_best_mle_valid'))
+        elif args.validation_model == 'best_meteor':
+            sample_saver_valid = open(
+                samples_fname + "_valid_" + config['id'] + '_best_meteor_' + '.txt', 'w')
+            sample_saver_valid = open(
+                samples_fname + "_valid_" + config['id'] + '_best_meteor_' + '.txt', 'a')
+            checkpoint = torch.load(os.path.join(saved_models, config['id'] + '_meteor_valid'))
         else:
-            sample_saver_valid = open(samples_fname + "_valid_" + config['id'] + '_' + str(args.start_epoch) + '.txt', 'w')
-            sample_saver_valid = open(samples_fname + "_valid_" + config['id'] + '_' + str(args.start_epoch) + '.txt', 'a')
+            sample_saver_valid = open(samples_fname + "_valid_" + config['id'] + '_' + str(args.start_epoch) + '_' + '.txt', 'w')
+            sample_saver_valid = open(samples_fname + "_valid_" + config['id'] + '_' + str(args.start_epoch) + '_' + '.txt', 'a')
             checkpoint = torch.load(os.path.join(saved_models, config['id'] + '_' + str(args.start_epoch)))
         Model.load_state_dict(checkpoint['model_State_dict'])
         # Model.modelrun(Data=Data_train, type_='valid', total_step=Data_valid.num_batches, ep=0,sample_saver=sample_saver_train)
@@ -377,16 +391,26 @@ if __name__ == '__main__':
 
     elif args.type == 'test':
         if args.validation_model == 'best_combined':
-            sample_saver_valid = open(samples_fname + "_test_" + config['id'] + '_best_combined.txt', 'w')
-            sample_saver_valid = open(samples_fname + "_test_" + config['id'] + '_best_combined.txt', 'a')
+            sample_saver_test= open(
+                samples_fname + "_test_" + config['id'] + '_best_combined_' + '.txt', 'w')
+            sample_saver_test = open(
+                samples_fname + "_test_" + config['id'] + '_best_combined_' + '.txt', 'a')
             checkpoint = torch.load(os.path.join(saved_models, config['id'] + '_best_combined_loss'))
         elif args.validation_model == 'best_mle':
-            sample_saver_valid = open(samples_fname + "_test_" + config['id'] + '_best_mle.txt', 'w')
-            sample_saver_valid = open(samples_fname + "_test_" + config['id'] + '_best_mle.txt', 'a')
+            sample_saver_test = open(
+                samples_fname + "_test_" + config['id'] + '_best_mle_' + '.txt', 'w')
+            sample_saver_test = open(
+                samples_fname + "_test_" + config['id'] + '_best_mle_' + '.txt', 'a')
             checkpoint = torch.load(os.path.join(saved_models, config['id'] + '_best_mle_valid'))
+        elif args.validation_model == 'best_meteor':
+            sample_saver_test = open(
+                samples_fname + "_test_" + config['id'] + '_best_meteor_' + '.txt', 'w')
+            sample_saver_test = open(
+                samples_fname + "_test_" + config['id'] + '_best_meteor_' + '.txt', 'a')
+            checkpoint = torch.load(os.path.join(saved_models, config['id'] + '_meteor_valid'))
         else:
-            sample_saver_valid = open(samples_fname + "_test_" + config['id'] + '_' + str(args.start_epoch) + '.txt', 'w')
-            sample_saver_valid = open(samples_fname + "_test_" + config['id'] + '_' + str(args.start_epoch) + '.txt', 'a')
+            sample_saver_test = open(samples_fname + "_test_" + config['id'] + '_' + str(args.start_epoch) + '_' + '.txt', 'w')
+            sample_saver_test = open(samples_fname + "_test_" + config['id'] + '_' + str(args.start_epoch) + '_' + '.txt', 'a')
             checkpoint = torch.load(os.path.join(saved_models, config['id'] + '_' + str(args.start_epoch)))
         Model.load_state_dict(checkpoint['model_State_dict'])
         Model.modelrun(Data=Data_test, type_='valid', total_step=Data_test.num_batches, ep=0,sample_saver=sample_saver_test)

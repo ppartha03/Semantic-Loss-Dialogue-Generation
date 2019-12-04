@@ -20,28 +20,29 @@ parser.add_argument('--dataset', type=str, default="frames")
 parser.add_argument('--loss',type=str, default='combine') #nll, bert, combine, alternate
 parser.add_argument('--batch_size', type=int, default=8)
 parser.add_argument('--type', type=str, default='train') #train, valid, test
-parser.add_argument('--alpha',type=float, default=0.0)
+parser.add_argument('--alpha', type=float, default=0.0)
 parser.add_argument('--toggle_loss',type=float, default=0.5)
 parser.add_argument('--teacher_forcing', type=float, default=0.1)
 parser.add_argument('--change_nll_mask', action='store_true')
 parser.add_argument('--save_base', type=str, default='..')
 parser.add_argument('--encoder_learning_rate', type=float, default=0.004)
 parser.add_argument('--decoder_learning_rate', type=float, default=0.004)
-parser.add_argument('--output_dropout', type=float,default=0.0)
+parser.add_argument('--output_dropout', type=float,default=0.5)
 parser.add_argument('--data_path', type=str, default="../Dataset")
 parser.add_argument('--save_every_epoch', action='store_true')
 parser.add_argument('--reload', action='store_true')
+parser.add_argument('--run_id', type=int, default=-1) #run_id of -1 means last run
 parser.add_argument('--start_epoch', type=int, default=-1)
 parser.add_argument('--num_epochs', type=int, default=100)
-parser.add_argument('--beam_search', action='store_true')
 parser.add_argument('--topk', type=int, default=5)
 parser.add_argument('--seed', type=int, default=100)
 parser.add_argument('--beam_width',type = int,default = 5)
 parser.add_argument('--no_posteos_mask', action='store_true') #if true, don't mask the words generated after the <eos> token
+parser.add_argument('--sentence_embedding', type=str, default='mean') #calculate sentence embedding using "mean" or "sum" of bert embeddings
 #if true, don't apply the mask before generating the Bert sentence (allow the model to generate masked tokens, and then mask them during the embedding calculation)
 parser.add_argument('--no_prebert_mask', action='store_true')
 parser.add_argument('--wandb_project', type=str, default='metadial')
-parser.add_argument('--validation_model', type=str, default='start_epoch') #which model to use for validation/test, 'best_mle' or 'best_combined' or the model of epoch 'start_epoch'
+parser.add_argument('--validation_model', type=str, default='best_meteor') #which model to use for validation/test, 'best_mle' or 'best_combined', 'best_meteor' or the model of epoch 'start_epoch'
 args = parser.parse_args()
 
 save_path = os.path.join(args.save_base, 'MetaDial')
@@ -50,7 +51,8 @@ result_path = os.path.join(save_path, 'Results', args.dataset)
 sys.path.append(args.data_path)
 from WoZ_data_iterator import WoZGraphDataset
 from Frames_data_iterator import FramesGraphDataset
-from Bert_util import Load_embeddings, Bert_loss, Mask_sentence, getTopK, BeamSearchNode
+from Bert_util import Load_embeddings, Bert_loss, Mask_sentence, getTopK, Posteos_mask, create_id, BeamSearchNode
+
 from nltk.translate.meteor_score import meteor_score
 from queue import PriorityQueue
 
@@ -95,6 +97,20 @@ else:
     config['data'] = FramesGraphDataset(Data_dir=config['data_path'] + '/Frames-dataset/')
 
 # Hyper-parameters
+config = {}
+config['data_path'] = args.data_path
+config['save_path'] = save_path
+# config['tensorboard_path'] = tensorboard_path
+config["wandb_project"] = args.wandb_project
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+config['seed'] = args.seed
+
+if args.dataset == 'mwoz':
+    config['data'] = WoZGraphDataset(Data_dir=config['data_path'] + '/MULTIWOZ2/')
+else:
+    config['data'] = FramesGraphDataset(Data_dir=config['data_path'] + '/Frames-dataset/')
+
+# Hyper-parameters
 config['teacher_forcing'] = args.teacher_forcing
 config['sequence_length'] = 101
 config['input_size'] = config['data'].vlen
@@ -114,19 +130,15 @@ config['dataset'] = args.dataset
 config['device'] = device
 config['save_every_epoch'] = args.save_every_epoch
 config['posteos_mask'] = ~args.no_posteos_mask
+config['sentence_embedding'] = args.sentence_embedding
 config['prebert_mask'] = ~args.no_prebert_mask
-config['best_mle_valid'] = 10000
-config['best_combined_loss'] = 10000
-config['meteor_valid'] = 0
-if config['prebert_mask']:
-    config['id'] = '{}_preBertMask_{}_{}_{}_{}_{}_{}_{}_{}_{}'.format(args.dataset,args.hidden_size,args.encoder_learning_rate,
-                                                                         args.decoder_learning_rate,args.loss,args.alpha,
-                                                                         args.toggle_loss,args.output_dropout,args.change_nll_mask, args.no_posteos_mask)
-else:
-    config['id'] = '{}_{}_{}_{}_{}_{}_{}_{}_{}_{}'.format(args.dataset,args.hidden_size,args.encoder_learning_rate,
-                                                             args.decoder_learning_rate,args.loss,args.alpha,args.toggle_loss,
-                                                             args.output_dropout,args.change_nll_mask, args.no_posteos_mask)
-config['wandb_id'] = config['id'] + '_' + str(np.random.randint(1000))
+config['best_mle_valid'] = 10000; config['best_mle_valid_epoch'] = 0
+config['best_combined_loss'] = 10000; config['best_combined_loss_epoch'] = 0
+config['meteor_valid'] = 0; config['meteor_valid_epoch'] = 0
+
+# Create model id
+config['id'], config['run_id'] = create_id(config, saved_models, args.reload, args.run_id, args.type)
+config['wandb_id'] = config['id'] + '_' + str(np.random.randint(10000)) # used for resuming
 
 config['weights'] = np.hstack([np.array([1,1,1,0]),np.ones(config['input_size']-4)])
 config['pad_index'] = 3
@@ -184,6 +196,7 @@ class Seq2Seq(nn.Module):
             response_premasked = [] #the response generated by choosing only unmasked words
             # Generate random masks
             print(i,'/',total_step)
+            logging.info(str(i) + '/' +  str(total_step))
             topk = args.topk
             decoded_batch = []
             for di in range(self.Data[i]['encoder_length']):
@@ -218,10 +231,11 @@ class Seq2Seq(nn.Module):
                     decoder_output, decoder_hidden = self.Decoder(decoder_input_, decoder_hidden)
                     log_prob, indexes = torch.topk(decoder_output.view(-1), args.beam_width)
                     nextnodes = []
-                    print(indexes)
+                    logging.info(str(indexes_))
                     for new_k in range(args.beam_width):
                         decoded_t = indexes[new_k].item()
                         print(decoded_t)
+                        logging.info(str(decoded_t))
                         log_p = log_prob[new_k].item()
                         node = BeamSearchNode(decoder_hidden, n, decoded_t, n.logp + log_p, n.leng + 1, decoder_output.view(-1,1,self.config['input_size']))
                         score = -node.eval()
@@ -305,8 +319,8 @@ if __name__ == '__main__':
             sample_saver_test = open(samples_fname + "_test_" + str(args.topk) + '_' + str(args.beam_width) + '_' + config['id'] + '_best_mle.txt', 'a')
             checkpoint = torch.load(os.path.join(saved_models, config['id'] + '_best_mle_valid'))
         elif str(args.validation_model) == 'best_meteor':
-            sample_saver_test = open(samples_fname + "_test_" + str(args.topk) + '_' + str(args.beam_width) + '_' + config['id'] + '_best_mle.txt', 'w')
-            sample_saver_test = open(samples_fname + "_test_" + str(args.topk) + '_' + str(args.beam_width) + '_' + config['id'] + '_best_mle.txt', 'a')
+            sample_saver_test = open(samples_fname + "_test_" + str(args.topk) + '_' + str(args.beam_width) + '_' + config['id'] + '_meteor_valid.txt', 'w')
+            sample_saver_test = open(samples_fname + "_test_" + str(args.topk) + '_' + str(args.beam_width) + '_' + config['id'] + '_meteor_valid.txt', 'a')
             checkpoint = torch.load(os.path.join(saved_models, config['id'] + '_meteor_valid'))
         else:
             sample_saver_test = open(samples_fname + "_test_" + str(args.topk) + '_' + str(args.beam_width) + '_' + config['id'] + '_' + str(args.start_epoch) + '.txt', 'w')
@@ -314,3 +328,39 @@ if __name__ == '__main__':
             checkpoint = torch.load(os.path.join(saved_models, config['id'] + '_' + str(args.start_epoch)))
         Model.load_state_dict(checkpoint['model_State_dict'])
         Model.modelrun(Data=Data_test, type_='valid', total_step=Data_test.num_batches, ep=0,sample_saver=sample_saver_test)
+    elif args.type == 'valid':
+        if args.validation_model == 'best_combined':
+            sample_saver_valid = open(
+                samples_fname + "_valid_" + str(args.topk) + '_' + str(args.beam_width) + '_' + config[
+                    'id'] + '_best_combined.txt', 'w')
+            sample_saver_valid = open(
+                samples_fname + "_valid_" + str(args.topk) + '_' + str(args.beam_width) + '_' + config[
+                    'id'] + '_best_combined.txt', 'a')
+            checkpoint = torch.load(os.path.join(saved_models, config['id'] + '_best_combined_loss'))
+        elif args.validation_model == 'best_mle':
+            sample_saver_valid = open(
+                samples_fname + "_valid_" + str(args.topk) + '_' + str(args.beam_width) + '_' + config[
+                    'id'] + '_best_mle.txt', 'w')
+            sample_saver_valid = open(
+                samples_fname + "_valid_" + str(args.topk) + '_' + str(args.beam_width) + '_' + config[
+                    'id'] + '_best_mle.txt', 'a')
+            checkpoint = torch.load(os.path.join(saved_models, config['id'] + '_best_mle_valid'))
+        elif str(args.validation_model) == 'best_meteor':
+            sample_saver_valid = open(
+                samples_fname + "_valid_" + str(args.topk) + '_' + str(args.beam_width) + '_' + config[
+                    'id'] + '_meteor_valid.txt', 'w')
+            sample_saver_valid = open(
+                samples_fname + "_valid_" + str(args.topk) + '_' + str(args.beam_width) + '_' + config[
+                    'id'] + '_meteor_valid.txt', 'a')
+            checkpoint = torch.load(os.path.join(saved_models, config['id'] + '_meteor_valid'))
+        else:
+            sample_saver_test = open(
+                samples_fname + "_valid_" + str(args.topk) + '_' + str(args.beam_width) + '_' + config['id'] + '_' + str(
+                    args.start_epoch) + '.txt', 'w')
+            sample_saver_test = open(
+                samples_fname + "_valid_" + str(args.topk) + '_' + str(args.beam_width) + '_' + config['id'] + '_' + str(
+                    args.start_epoch) + '.txt', 'a')
+            checkpoint = torch.load(os.path.join(saved_models, config['id'] + '_' + str(args.start_epoch)))
+        Model.load_state_dict(checkpoint['model_State_dict'])
+        Model.modelrun(Data=Data_valid, type_='valid', total_step=Data_valid.num_batches, ep=0,
+                       sample_saver=sample_saver_valid)
