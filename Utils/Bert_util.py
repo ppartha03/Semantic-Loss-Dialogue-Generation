@@ -13,7 +13,7 @@ device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 responses_for_batch = []
 
 class BeamSearchNode(object):
-    def __init__(self, hiddenstate, previousNode, wordId, logProb, length):
+    def __init__(self, hiddenstate, previousNode, wordId, logProb, length, dec_inp):
         '''
         :param hiddenstate:
         :param previousNode:
@@ -26,16 +26,17 @@ class BeamSearchNode(object):
         self.wordid = wordId
         self.logp = logProb
         self.leng = length
+        self.decoder_input_d = dec_inp
 
     def eval(self, alpha=1.0):
-        reward = 0
+        reward = torch.rand(1)
         # Add here a function for shaping a reward
 
         return self.logp / float(self.leng - 1 + 1e-6) + alpha * reward
 
     def __lt__(self, other):
         return self.logp < other.logp
-        
+
 def getTopK(dec_list, topk = 5, Vocab_inv = None, batch_size = 1,seq_length = 10):
     global responses_for_batch
     # walk over each step in sequence

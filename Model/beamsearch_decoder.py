@@ -27,7 +27,7 @@ parser.add_argument('--change_nll_mask', action='store_true')
 parser.add_argument('--save_base', type=str, default='..')
 parser.add_argument('--encoder_learning_rate', type=float, default=0.004)
 parser.add_argument('--decoder_learning_rate', type=float, default=0.004)
-parser.add_argument('--output_dropout', type=float,default=0.5)
+parser.add_argument('--output_dropout', type=float,default=0.0)
 parser.add_argument('--data_path', type=str, default="../Dataset")
 parser.add_argument('--save_every_epoch', action='store_true')
 parser.add_argument('--reload', action='store_true')
@@ -194,7 +194,7 @@ class Seq2Seq(nn.Module):
                 decoder_hidden = (hidden_enc[0][:,b_ind, :].unsqueeze(0),hidden_enc[1][:,b_ind, :].unsqueeze(0))
                 decoder_input_ = decoder_input[b_ind,0,:]
 
-                node = BeamSearchNode(decoder_hidden, None, torch.argmax(decoder_input_), 0, 1)
+                node = BeamSearchNode(decoder_hidden, None, torch.argmax(decoder_input_).item(), 0, 1,decoder_input_.view(-1,1,self.config['input_size']))
                 nodes = PriorityQueue()
                 endnodes = []
                 number_required = min((topk + 1), topk - len(endnodes))
@@ -205,9 +205,9 @@ class Seq2Seq(nn.Module):
                     if qsize > 2000: break
 
                     score, n = nodes.get()
-                    decoder_input_b = n.wordid
+                    decoder_input_ = n.decoder_input_d
                     decoder_hidden = n.h
-                    if n.wordid.item() == 1 and n.prevNode != None:
+                    if n.wordid == 1 and n.prevNode != None:
                         endnodes.append((score, n))
                         # if we reached maximum # of sentences required
                         if len(endnodes) >= number_required:
@@ -215,20 +215,19 @@ class Seq2Seq(nn.Module):
                         else:
                             continue
 
-                    decoder_output, decoder_hidden = self.Decoder(decoder_input_.view(-1,1,self.config['input_size']), decoder_hidden)
-
-                    log_prob, indexes = torch.topk(decoder_output.view(1,-1), args.beam_width)
+                    decoder_output, decoder_hidden = self.Decoder(decoder_input_, decoder_hidden)
+                    log_prob, indexes = torch.topk(decoder_output.view(-1), args.beam_width)
                     nextnodes = []
+                    print(indexes)
                     for new_k in range(args.beam_width):
-                        decoded_t = indexes[0][new_k].view(1, -1)
-                        log_p = log_prob[0][new_k].item()
-
-                        node = BeamSearchNode(decoder_hidden, n, decoded_t[0], n.logp + log_p, n.leng + 1)
+                        decoded_t = indexes[new_k].item()
+                        print(decoded_t)
+                        log_p = log_prob[new_k].item()
+                        node = BeamSearchNode(decoder_hidden, n, decoded_t, n.logp + log_p, n.leng + 1, decoder_output.view(-1,1,self.config['input_size']))
                         score = -node.eval()
                         nextnodes.append((score, node))
-
-                    for _ in range(len(nextnodes)):
-                        score, nn = nextnodes[_]
+                    for m in range(len(nextnodes)):
+                        score, nn = nextnodes[m]
                         nodes.put((score, nn))
                         # increase qsize
                     qsize += len(nextnodes) - 1
@@ -259,7 +258,7 @@ class Seq2Seq(nn.Module):
                     r = ''
                     for beam_ind in range(len(decoded_batch[c_index])):
                         res = decoded_batch[c_index][beam_ind]
-                        res_str = ' '.join([self.Data.Vocab_inv[idx.item()] for idx in res])
+                        res_str = ' '.join([self.Data.Vocab_inv[idx] for idx in res])
                         r += 'Model_Response_'+str(beam_ind)+': '+res_str+'\n'
                     self.sample_saver.write('Context: '+ c + '\n' + r + 'Target: ' + t + '\n\n')
             if type_ == 'train':
