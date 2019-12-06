@@ -39,7 +39,7 @@ parser.add_argument('--sentence_embedding', type=str, default='mean') #calculate
 parser.add_argument('--no_prebert_mask', action='store_true')
 parser.add_argument('--wandb_project', type=str, default='metadial')
 parser.add_argument('--validation_model', type=str, default='best_meteor') #which model to use for validation/test, 'best_mle' or 'best_combined', 'best_meteor' or the model of epoch 'start_epoch'
-parser.add_argument('--bert_finetune', action='store_true') #if true, finetune a trained model using bert
+parser.add_argument('--bertFinetune', action='store_true') #if true, finetune a trained model using bert
 args = parser.parse_args()
 
 save_path = os.path.join(args.save_base, 'MetaDial')
@@ -120,7 +120,7 @@ config['best_combined_loss'] = 10000; config['best_combined_loss_epoch'] = 0
 config['meteor_valid'] = 0; config['meteor_valid_epoch'] = 0
 
 # Create model id
-config['id'], config['run_id'] = create_id(config, saved_models, args.reload, args.run_id, args.type)
+config['id'], config['run_id'] = create_id(config, saved_models, args.reload or args.bertFinetune, args.run_id, args.type)
 config['wandb_id'] = config['id'] + '_' + str(np.random.randint(10000)) # used for resuming
 
 config['weights'] = np.hstack([np.array([1,1,1,0]),np.ones(config['input_size']-4)])
@@ -270,7 +270,7 @@ class Seq2Seq(nn.Module):
                 f"Valid:   Loss_MLE_eval: {loss_mle_inf:.4f},  Loss_Bert_eval: {loss_bert_inf:.4f}, 'meteor_score': {meteor_score_valid:.2f}\n")
             wandb.log({'Loss_MLE_eval': loss_mle_inf, 'Loss_Bert_eval': loss_bert_inf,
                        'train_loss_eval': train_loss_inf, 'reinforce_loss_eval': loss_reinforce_inf,
-                       'meteor_score': meteor_score_valid, 'global_step': ep})
+                       'meteor_score': meteor_score_valid, 'c': ep})
             return loss_mle_inf, train_loss_inf, meteor_score_valid
         if type_ == 'train':
             logging.info(
@@ -298,12 +298,23 @@ if __name__ == '__main__':
         checkpoint = torch.load(os.path.join(saved_models, config['id'] + '_meteor_valid'))
         Model.load_state_dict(checkpoint['model_State_dict'])
         config = checkpoint['config']
+        config['bertFinetune'] = True
         config["device"] = device
         config['id'] += "_meteor_valid_bertFinetune"
-        config['alpha'] = 1.0
         config['wandb_id'] = config['id'] + '_' + str(np.random.randint(10000))  # used for resuming
-        Model.config = config
+        config['encoder_learning_rate'] /= 100
+        config['decoder_learning_rate'] /= 100
+        config['output_dropout'] = 0.0
         wandb.init(project=config["wandb_project"], name=config['id'], id=config['wandb_id'], allow_val_change=True)
+        wandb.config.update(config, allow_val_change=True)
+        config['alpha'] = 1.0
+        # config['loss'] = 'bert'
+        Model.config = config
+        for g in Model.optimizer.param_groups:
+            g['lr'] = config['encoder_learning_rate']
+        for g in Model.optimizer_dec.param_groups:
+            g['lr'] = config['decoder_learning_rate']
+
     elif args.reload and args.type=='train':
         checkpoint = torch.load(os.path.join(saved_models, config['id'] + '_' + str(args.start_epoch)))
         Model.load_state_dict(checkpoint['model_State_dict'])
@@ -313,10 +324,10 @@ if __name__ == '__main__':
     elif args.type=='train':
         torch.save({'model_State_dict': Model.state_dict(), 'config': config}, os.path.join(saved_models, config['id'] + '_-1'))
         wandb.init(project=config["wandb_project"], name=config['id'], id=config['wandb_id'], allow_val_change=True)
-
     if args.type == 'train':
         Data_train.setBatchSize(config['batch_size'])
-        wandb.config.update(config, allow_val_change=True)
+        if not args.bertFinetune:
+            wandb.config.update(config, allow_val_change=True)
         wandb.watch(Model)
         logging.info(f"using {config['device']}\n")
 
