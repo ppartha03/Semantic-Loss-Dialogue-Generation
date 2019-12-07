@@ -305,7 +305,7 @@ if __name__ == '__main__':
         config['encoder_learning_rate'] /= 100
         config['decoder_learning_rate'] /= 100
         config['output_dropout'] = 0.0
-        wandb.init(project=config["wandb_project"], name=config['id'], id=config['wandb_id'], allow_val_change=True)
+        wandb.init(project=config["wandb_project"], entity='mohamedabdelsalam9', name=config['id'], id=config['wandb_id'], allow_val_change=True)
         wandb.config.update(config, allow_val_change=True)
         config['alpha'] = 1.0
         # config['loss'] = 'bert'
@@ -320,10 +320,10 @@ if __name__ == '__main__':
         Model.load_state_dict(checkpoint['model_State_dict'])
         config = checkpoint['config']
         config["device"] = device
-        wandb.init(project=config["wandb_project"], resume=config['wandb_id'], allow_val_change=True)
+        wandb.init(project=config["wandb_project"], entity='mohamedabdelsalam9', resume=config['wandb_id'], allow_val_change=True)
     elif args.type=='train':
         torch.save({'model_State_dict': Model.state_dict(), 'config': config}, os.path.join(saved_models, config['id'] + '_-1'))
-        wandb.init(project=config["wandb_project"], name=config['id'], id=config['wandb_id'], allow_val_change=True)
+        wandb.init(project=config["wandb_project"], entity='mohamedabdelsalam9', name=config['id'], id=config['wandb_id'], allow_val_change=True)
     if args.type == 'train':
         Data_train.setBatchSize(config['batch_size'])
         if not args.bertFinetune:
