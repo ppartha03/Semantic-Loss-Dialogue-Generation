@@ -164,9 +164,11 @@ class Seq2Seq(nn.Module):
         self.Data = Data
         self.sample_saver = sample_saver
         meteor_score_valid = 0.
+        count_examples = 0.
         for i in range(total_step):
             seq_loss_a = 0.
             batch_size = self.Data[i]['input'].shape[0]
+            count_examples += batch_size
             hidden_enc = (torch.zeros(self.config['num_layers'], batch_size, self.config['hidden_size'], device=self.config['device']), torch.zeros(self.config['num_layers'], batch_size, self.config['hidden_size'], device=self.config['device']))
 
             input_ = torch.from_numpy(self.Data[i]['input']).to(self.config['device']).view(batch_size,self.config['sequence_length'],self.config['input_size'])
@@ -260,7 +262,7 @@ class Seq2Seq(nn.Module):
                             ind_mod = r_list.index('<eos>')
                         else:
                             ind_mod = -1
-                        meteor_score_valid += meteor_score(' '.join(r_list[:ind_mod]),' '.join(t_list[1:ind_tar]))/(float(con.shape[0])*total_step)
+                        meteor_score_valid += meteor_score(' '.join(r_list[:ind_mod]),' '.join(t_list[1:ind_tar]))
                         self.sample_saver.write('Context: '+ c + '\n' + 'Model_Response: ' + r + '\n' + 'Target: ' + t + '\n\n')
                     else:
                         r = ''
@@ -281,7 +283,7 @@ class Seq2Seq(nn.Module):
             logging.info(
                 f"Train:   Loss_MLE_eval: {loss_mle_inf:.4f},  Loss_Bert_eval: {loss_bert_inf:.4f}, Meteor_score_valid : {meteor_score_valid:.4f}\n")
             wandb.log({'Loss_MLE_eval': loss_mle_inf, 'Loss_Bert_eval': loss_bert_inf, 'Meteor_score_valid': meteor_score_valid,'train_loss_eval': train_loss_inf, 'global_step':ep})
-            return loss_mle_inf, train_loss_inf, meteor_score_valid
+            return loss_mle_inf, train_loss_inf, meteor_score_valid/count_examples
         if type_ == 'train':
             logging.info(
                 f"Train:   Loss_MLE_train: {loss_mle_inf:.4f},  Loss_MLE_train: {loss_bert_inf:.4f}\n")
@@ -330,7 +332,6 @@ if __name__ == '__main__':
             sample_saver_eval = open(samples_fname + "_eval_" + config['id'] + str(epoch) + '.txt', 'w')
             sample_saver_eval = open(samples_fname + "_eval_" + config['id'] + str(epoch) + '.txt', 'a')
             loss_mle_valid, combined_loss_valid, meteor_valid = Model.modelrun(Data=Data_valid, type_='eval', total_step=Data_valid.num_batches, ep=epoch, sample_saver=sample_saver_eval)
-            meteor_valid = meteor_valid / Data_valid.num_batches
             if meteor_valid > config['meteor_valid']:
                 config['meteor_valid'] = meteor_valid
                 wandb.config.update({'meteor_valid':meteor_valid}, allow_val_change=True)
