@@ -278,14 +278,13 @@ class Seq2Seq(nn.Module):
             # meteor_score_valid = meteor_score_valid / cnt * 100
             self.sample_saver.close()
             meteor_score_valid = meteor(sample_saver.name)*100.
-            logging.info("Valid:   Loss_MLE_eval: {loss_mle_inf:.4f},  Loss_Bert_eval: {loss_bert_inf:.4f}, 'meteor_score': {meteor_score_valid:.2f}\n")
+            logging.info("Valid:   Loss_MLE_eval: {loss_mle_inf:.4f},  Loss_Bert_eval: {loss_bert_inf:.4f}, 'meteor_score': {meteor_score_valid:.2f}\n".format(loss_mle_inf = loss_mle_inf,loss_bert_inf = loss_bert_inf, meteor_score_valid = meteor_score_valid))
             ####wandb.log({'Loss_MLE_eval': loss_mle_inf, 'Loss_Bert_eval': loss_bert_inf,
             ####           'train_loss_eval': train_loss_inf, 'reinforce_loss_eval': loss_reinforce_inf,
             ####           'meteor_score': meteor_score_valid, 'global_step':ep})
             return loss_mle_inf, train_loss_inf, meteor_score_valid
         if type_ == 'train':
-            print(train_loss_inf)
-            logging.info("Train:   Loss_MLE_train: {loss_mle_inf:.4f},  Loss_Bert_train: {loss_bert_inf:.4f}\n")
+            logging.info("Train:   Loss_MLE_train: {loss_mle_inf:.4f},  Loss_Bert_train: {loss_bert_inf:.4f}\n".format(loss_mle_inf = loss_mle_inf,loss_bert_inf = loss_bert_inf))
             ####wandb.log({'Loss_MLE_train': loss_mle_inf, 'Loss_Bert_train': loss_bert_inf,
             ####           'train_loss_train': train_loss_inf, 'reinforce_loss_train': loss_reinforce_inf,
             ####           'global_step':ep})
