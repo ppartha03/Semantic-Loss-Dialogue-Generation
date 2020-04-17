@@ -33,13 +33,13 @@ class Q_predictor(nn.Module):
         #return self.softmax(self.selector_Q_2(self.Dp(self.selector_Q_1(input_))))
 
 class DecoderRNN(nn.Module):
-    def __init__(self, hidden_size, output_size, input_size, num_layers, drop_out = 0, bidirectional = False):
+    def __init__(self, hidden_size, output_size, num_layers, drop_out = 0, bidirectional = False):
         super(DecoderRNN, self).__init__()
         self.hidden_size = hidden_size
         self.embedding = nn.Embedding(output_size, hidden_size)
         self.num_layers = num_layers
         self.hidden_size = hidden_size
-        self.lstm = nn.LSTM(input_size, hidden_size, self.num_layers,
+        self.lstm = nn.LSTM(hidden_size, hidden_size, self.num_layers,
                           dropout=drop_out, bidirectional=bidirectional, batch_first = True)
         self.bi_directional = bidirectional
         self.out = nn.Linear(hidden_size, output_size)
@@ -49,16 +49,53 @@ class DecoderRNN(nn.Module):
     def forward(self, input_, hidden):
         h0 = hidden[0]#torch.zeros(self.num_layers, input_.size(0), self.hidden_size).to(device)
         c0 = hidden[1]#torch.zeros(self.num_layers, input_.size(0), self.hidden_size).to(device)
+        output = self.embedding(input_).view(1,1,-1)
         if self.bi_directional:
-            out_, hid_ = self.lstm(input_, (h0,c0))  # out: tensor of shape (batch_size, seq_length, hidden_size)
+            out_, hid_ = self.lstm(output, (h0,c0))  # out: tensor of shape (batch_size, seq_length, hidden_size)
             output = out_[:,:,self.hidden_size:] + out_[:,:,:self.hidden_size]
             # Decode the hidden state of the last time step
             output = self.softmax(self.out(output))
             return output, hid_
         else:
-            output, hidden = self.lstm(input_, (h0,c0))
+            output, hidden = self.lstm(output, (h0,c0))
             output = self.softmax(self.out(output))
         return output, hidden
+
+class AttnDecoderRNN(nn.Module):
+    def __init__(self, hidden_size, output_size, num_layers, maxlength, drop_out = 0, bidirectional = False):
+        super(DecoderRNN, self).__init__()
+        self.hidden_size = hidden_size
+        self.embedding = nn.Embedding(output_size, hidden_size)
+        self.num_layers = num_layers
+        self.hidden_size = hidden_size
+        self.max_length = maxlength
+        self.attn = nn.Linear(self.hidden_size * 2, self.max_length)
+        self.attn_combine = nn.Linear(self.hidden_size * 2, self.hidden_size)
+        self.dropout = nn.Dropout(self.dropout_p)
+        self.lstm = nn.LSTM(hidden_size, hidden_size, self.num_layers,
+                          dropout=drop_out, bidirectional=bidirectional, batch_first = True)
+        self.bi_directional = bidirectional
+        self.out = nn.Linear(hidden_size, output_size)
+        self.softmax = nn.LogSoftmax(dim = 2)
+        self.sigmoid = nn.Sigmoid()
+
+    def forward(self, input_, hidden, encoderhid):
+        h0 = hidden[0]#torch.zeros(self.num_layers, input_.size(0), self.hidden_size).to(device)
+        c0 = hidden[1]#torch.zeros(self.num_layers, input_.size(0), self.hidden_size).to(device)
+        embedded = self.embedding(input_).view(1, 1, -1)
+        embedded = self.dropout(embedded)
+
+        attn_weights = F.softmax(
+            self.attn(torch.cat((embedded[0], hidden[0]), 1)), dim=1)
+        attn_applied = torch.bmm(attn_weights.unsqueeze(0),
+                                 encoder_outputs.unsqueeze(0))
+
+        output = torch.cat((embedded[0], attn_applied[0]), 1)
+        output = self.attn_combine(output).unsqueeze(0)
+
+        output, hidden = self.lstm(output, (h0,c0))
+        output = F.log_softmax(self.out(output))
+        return output, hidden, attn_weights
 
     def initHidden(self):
         return torch.zeros(1, 1, self.hidden_size, device=device)

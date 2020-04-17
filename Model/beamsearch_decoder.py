@@ -203,7 +203,7 @@ class Seq2Seq(nn.Module):
                 context_ = context_ + [torch.argmax(input_[:,di,:].view(batch_size,-1),dim =1).view(-1,1)]
                 target_response = target_response + [torch.argmax(decoder_input[:,di,:].view(batch_size,-1),dim =1).view(-1,1)]
             for b_ind in range(self.Data[i]['input'].shape[0]):
-                decoder_hidden = (hidden_enc[0][:,b_ind, :].view(1,1,-1),hidden_enc[1][:,b_ind, :].view(1,1,-1))
+                decoder_hidden = (hidden_enc[0][:,b_ind, :],hidden_enc[1][:,b_ind, :])
                 decoder_input_ = decoder_input[b_ind,0,:]
 
                 node = BeamSearchNode(decoder_hidden, None, torch.argmax(decoder_input_).item(), 0., 1,decoder_input_.view(-1,1,self.config['input_size']))
