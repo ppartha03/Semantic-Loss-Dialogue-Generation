@@ -163,7 +163,7 @@ class Seq2Seq(nn.Module):
         self.Data = Data
         self.sample_saver = sample_saver
         meteor_score_valid = 0.
-        cnt = 0.
+        count_examples = 0.
         for i in range(total_step):
             seq_loss_a = 0.
             batch_size = self.Data[i]['input'].shape[0]
