@@ -184,7 +184,6 @@ class Seq2Seq(nn.Module):
             for di in range(self.Data[i]['encoder_length']):
                 out, hidden_enc = self.Encoder(input_[:,di,:], hidden_enc)
                 context_ = context_ + [torch.argmax(input_[:,di,:].view(batch_size,-1),dim =1).view(-1,1)]
-                print(len(out),batch_size,out[0].shape,encoder_outputs[0].shape)
                 encoder_outputs[di] = (hidden_enc[0]+hidden_enc[1]).view(batch_size,-1)
 
             decoder_hidden = hidden_enc
@@ -201,9 +200,7 @@ class Seq2Seq(nn.Module):
                     self.criterion = nn.NLLLoss(weight = torch.from_numpy(config['weights']).float()).to(device)
 
             for di in range(1,self.Data[i]['decoder_length']-1):
-                print(decoder_hidden[0].shape)
                 decoder_output, decoder_hidden, _ = self.Decoder(decoder_input_, decoder_hidden, encoder_outputs)
-                print(decoder_hidden[0].shape)
                 if np.random.rand() > self.config['teacher_forcing'] and type_ != 'train':
                     decoder_input_ = decoder_output.view(-1,self.config['input_size'])
                 else:
@@ -281,16 +278,14 @@ class Seq2Seq(nn.Module):
             # meteor_score_valid = meteor_score_valid / cnt * 100
             self.sample_saver.close()
             meteor_score_valid = meteor(sample_saver.name)*100.
-            logging.info(
-                f"Valid:   Loss_MLE_eval: {loss_mle_inf:.4f},  Loss_Bert_eval: {loss_bert_inf:.4f}, 'meteor_score': {meteor_score_valid:.2f}\n")
+            logging.info("Valid:   Loss_MLE_eval: {loss_mle_inf:.4f},  Loss_Bert_eval: {loss_bert_inf:.4f}, 'meteor_score': {meteor_score_valid:.2f}\n")
             wandb.log({'Loss_MLE_eval': loss_mle_inf, 'Loss_Bert_eval': loss_bert_inf,
                        'train_loss_eval': train_loss_inf, 'reinforce_loss_eval': loss_reinforce_inf,
                        'meteor_score': meteor_score_valid, 'global_step':ep})
             return loss_mle_inf, train_loss_inf, meteor_score_valid
         if type_ == 'train':
             print(train_loss_inf)
-            logging.info(
-                f"Train:   Loss_MLE_train: {loss_mle_inf:.4f},  Loss_Bert_train: {loss_bert_inf:.4f}\n")
+            logging.info("Train:   Loss_MLE_train: {loss_mle_inf:.4f},  Loss_Bert_train: {loss_bert_inf:.4f}\n")
             wandb.log({'Loss_MLE_train': loss_mle_inf, 'Loss_Bert_train': loss_bert_inf,
                        'train_loss_train': train_loss_inf, 'reinforce_loss_train': loss_reinforce_inf,
                        'global_step':ep})
@@ -324,7 +319,7 @@ if __name__ == '__main__':
         Data_train.setBatchSize(config['batch_size'])
         wandb.config.update(config, allow_val_change=True)
         wandb.watch(Model)
-        logging.info(f"using {config['device']}\n")
+        logging.info("using {config['device']}\n")
 
         Data_valid.setBatchSize(config['batch_size'])
         for epoch in range(config['epoch'], config['num_epochs']):
