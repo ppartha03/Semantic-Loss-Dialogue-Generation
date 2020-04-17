@@ -341,8 +341,8 @@ if __name__ == '__main__':
                 torch.save({'model_State_dict': Model.state_dict(), 'config': config},
                            os.path.join(saved_models, config['id'] + '_meteor_valid'))
                 #save the best model to wandb
-                torch.save({'model_State_dict': Model.state_dict(), 'config': config},
-                           os.path.join(wandb.run.dir, config['id'] + '_meteor_valid'))
+                ####torch.save({'model_State_dict': Model.state_dict(), 'config': config},
+                ####           os.path.join(wandb.run.dir, config['id'] + '_meteor_valid'))
             if loss_mle_valid < config['best_mle_valid']:
                 config['best_mle_valid'] = loss_mle_valid
                 ####wandb.config.update({'best_mle_valid':loss_mle_valid}, allow_val_change=True)
@@ -350,8 +350,8 @@ if __name__ == '__main__':
                 torch.save({'model_State_dict': Model.state_dict(), 'config': config},
                            os.path.join(saved_models, config['id'] + '_best_mle_valid'))
                 #save the best model to wandb
-                torch.save({'model_State_dict': Model.state_dict(), 'config': config},
-                           os.path.join(wandb.run.dir, config['id'] + '_best_mle_valid'))
+                ####torch.save({'model_State_dict': Model.state_dict(), 'config': config},
+                    ####       os.path.join(wandb.run.dir, config['id'] + '_best_mle_valid'))
             if combined_loss_valid < config['best_combined_loss']:
                 config['best_combined_loss'] = combined_loss_valid
                 ####wandb.config.update({'best_combined_loss':combined_loss_valid}, allow_val_change=True)
@@ -359,10 +359,10 @@ if __name__ == '__main__':
                 torch.save({'model_State_dict': Model.state_dict(), 'config': config},
                            os.path.join(saved_models, config['id'] + '_best_combined_loss'))
                 #save the best model to wandb
-                torch.save({'model_State_dict': Model.state_dict(), 'config': config},
-                           os.path.join(wandb.run.dir, config['id'] + '_best_combined_loss'))
-        torch.save({'model_State_dict': Model.state_dict(), 'config': config},
-                   os.path.join(wandb.run.dir, config['id'] + '_-1'))
+                ####torch.save({'model_State_dict': Model.state_dict(), 'config': config},
+                ####           os.path.join(wandb.run.dir, config['id'] + '_best_combined_loss'))
+        ####torch.save({'model_State_dict': Model.state_dict(), 'config': config},
+            ####       os.path.join(wandb.run.dir, config['id'] + '_-1'))
 
     elif args.type == 'valid':
         if args.validation_model == 'best_combined':
