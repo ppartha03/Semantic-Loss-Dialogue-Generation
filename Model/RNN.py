@@ -83,7 +83,6 @@ class AttnDecoderRNN(nn.Module):
     def forward(self, input_, hidden, encoder_outputs):
         h0 = hidden[0]#torch.zeros(self.num_layers, input_.size(0), self.hidden_size).to(device)
         c0 = hidden[1]#torch.zeros(self.num_layers, input_.size(0), self.hidden_size).to(device)
-        print('input',input_.shape)
         output = torch.argmax(input_,dim =1)
         embedded = self.embedding(output)
         #embedded = self.dropout(embedded)
@@ -95,7 +94,6 @@ class AttnDecoderRNN(nn.Module):
 
         output = torch.cat((embedded, attn_applied[:,:,0]), 1)
         output = self.attn_combine(output).unsqueeze(0)
-        print(output.shape)
         output, hidden = self.lstm(output.permute(1,0,2), (h0,c0))
         output = F.log_softmax(self.out(output))
         return output, hidden, attn_weights
