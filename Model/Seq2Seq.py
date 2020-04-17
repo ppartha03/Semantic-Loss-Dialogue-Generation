@@ -389,18 +389,18 @@ class Seq2Seq(nn.Module):
                     loss_mle_inf=loss_mle_inf,
                     loss_bert_inf=loss_bert_inf,
                     meteor_score_valid=meteor_score_valid))
-            # wandb.log({'Loss_MLE_eval': loss_mle_inf, 'Loss_Bert_eval': loss_bert_inf,
-            # 'train_loss_eval': train_loss_inf, 'reinforce_loss_eval': loss_reinforce_inf,
-            # 'meteor_score': meteor_score_valid, 'global_step':ep})
+            wandb.log({'Loss_MLE_eval': loss_mle_inf, 'Loss_Bert_eval': loss_bert_inf,
+            'train_loss_eval': train_loss_inf, 'reinforce_loss_eval': loss_reinforce_inf,
+            'meteor_score': meteor_score_valid, 'global_step':ep})
             return loss_mle_inf, train_loss_inf, meteor_score_valid
         if type_ == 'train':
             logging.info(
                 "Train:   Loss_MLE_train: {loss_mle_inf:.4f},  Loss_Bert_train: {loss_bert_inf:.4f}\n".format(
                     loss_mle_inf=loss_mle_inf,
                     loss_bert_inf=loss_bert_inf))
-            # wandb.log({'Loss_MLE_train': loss_mle_inf, 'Loss_Bert_train': loss_bert_inf,
-            # 'train_loss_train': train_loss_inf, 'reinforce_loss_train': loss_reinforce_inf,
-            # 'global_step':ep})
+            wandb.log({'Loss_MLE_train': loss_mle_inf, 'Loss_Bert_train': loss_bert_inf,
+            'train_loss_train': train_loss_inf, 'reinforce_loss_train': loss_reinforce_inf,
+            'global_step':ep})
 
 
 if __name__ == '__main__':
@@ -424,16 +424,16 @@ if __name__ == '__main__':
         Model.load_state_dict(checkpoint['model_State_dict'])
         config = checkpoint['config']
         config["device"] = device
-        ####wandb.init(project=config["wandb_project"], resume=config['wandb_id'], allow_val_change=True)
+        wandb.init(project=config["wandb_project"], resume=config['wandb_id'], allow_val_change=True)
     elif args.type == 'train':
         torch.save({'model_State_dict': Model.state_dict(), 'config': config},
                    os.path.join(saved_models, config['id'] + '_-1'))
-        ####wandb.init(project=config["wandb_project"], name=config['id'], id=config['wandb_id'], allow_val_change=True)
+        wandb.init(project=config["wandb_project"], name=config['id'], id=config['wandb_id'], allow_val_change=True)
 
     if args.type == 'train':
         Data_train.setBatchSize(config['batch_size'])
-        ####wandb.config.update(config, allow_val_change=True)
-        # wandb.watch(Model)
+        wandb.config.update(config, allow_val_change=True)
+        wandb.watch(Model)
         logging.info("using {config['device']}\n")
 
         Data_valid.setBatchSize(config['batch_size'])
@@ -446,7 +446,7 @@ if __name__ == '__main__':
                 ep=epoch,
                 sample_saver=None)
             config['epoch'] += 1
-            ####wandb.config.update({'epoch': config['epoch']}, allow_val_change=True)
+            wandb.config.update({'epoch': config['epoch']}, allow_val_change=True)
             torch.save({'model_State_dict': Model.state_dict(
             ), 'config': config}, os.path.join(saved_models, config['id'] + '_-1'))
             if config['save_every_epoch']:
@@ -472,27 +472,27 @@ if __name__ == '__main__':
                 Data=Data_valid, type_='eval', total_step=Data_valid.num_batches, ep=epoch, sample_saver=sample_saver_eval)
             if meteor_valid > config['meteor_valid']:
                 config['meteor_valid'] = meteor_valid
-                ####wandb.config.update({'meteor_valid':meteor_valid}, allow_val_change=True)
-                ####wandb.config.update({'meteor_valid_epoch': epoch}, allow_val_change=True)
+                wandb.config.update({'meteor_valid':meteor_valid}, allow_val_change=True)
+                wandb.config.update({'meteor_valid_epoch': epoch}, allow_val_change=True)
                 torch.save({'model_State_dict': Model.state_dict(), 'config': config},
                            os.path.join(saved_models, config['id'] + '_meteor_valid'))
                 # save the best model to wandb
-                # torch.save({'model_State_dict': Model.state_dict(), 'config': config},
-                # os.path.join(wandb.run.dir, config['id'] + '_meteor_valid'))
+                torch.save({'model_State_dict': Model.state_dict(), 'config': config},
+                os.path.join(wandb.run.dir, config['id'] + '_meteor_valid'))
             if loss_mle_valid < config['best_mle_valid']:
                 config['best_mle_valid'] = loss_mle_valid
-                ####wandb.config.update({'best_mle_valid':loss_mle_valid}, allow_val_change=True)
-                ####wandb.config.update({'best_mle_valid_epoch': epoch}, allow_val_change=True)
+                wandb.config.update({'best_mle_valid':loss_mle_valid}, allow_val_change=True)
+                wandb.config.update({'best_mle_valid_epoch': epoch}, allow_val_change=True)
                 torch.save({'model_State_dict': Model.state_dict(), 'config': config},
                            os.path.join(saved_models, config['id'] + '_best_mle_valid'))
                 # save the best model to wandb
-                # torch.save({'model_State_dict': Model.state_dict(), 'config': config},
-                # os.path.join(wandb.run.dir, config['id'] +
-                # '_best_mle_valid'))
+                torch.save({'model_State_dict': Model.state_dict(), 'config': config},
+                os.path.join(wandb.run.dir, config['id'] +
+                '_best_mle_valid'))
             if combined_loss_valid < config['best_combined_loss']:
                 config['best_combined_loss'] = combined_loss_valid
-                ####wandb.config.update({'best_combined_loss':combined_loss_valid}, allow_val_change=True)
-                ####wandb.config.update({'best_combined_loss_epoch': epoch}, allow_val_change=True)
+                wandb.config.update({'best_combined_loss':combined_loss_valid}, allow_val_change=True)
+                wandb.config.update({'best_combined_loss_epoch': epoch}, allow_val_change=True)
                 torch.save({'model_State_dict': Model.state_dict(), 'config': config},
                            os.path.join(saved_models, config['id'] + '_best_combined_loss'))
                 # save the best model to wandb
