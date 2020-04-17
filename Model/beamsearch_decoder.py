@@ -9,7 +9,6 @@ import os
 import logging
 import wandb
 import operator
-
 import wandb
 sys.path.append('../Utils/')
 
@@ -207,7 +206,7 @@ class Seq2Seq(nn.Module):
                 decoder_hidden = (hidden_enc[0][:,b_ind, :],hidden_enc[1][:,b_ind, :])
                 decoder_input_ = decoder_input[b_ind,0,:]
 
-                node = BeamSearchNode(decoder_hidden, None, torch.argmax(decoder_input_).item(), 0, 1,decoder_input_.view(-1,1,self.config['input_size']))
+                node = BeamSearchNode(decoder_hidden, None, torch.argmax(decoder_input_).item(), 0., 1,decoder_input_.view(-1,1,self.config['input_size']))
                 nodes = PriorityQueue()
                 endnodes = []
                 number_required = min((topk + 1), topk - len(endnodes))
@@ -215,12 +214,12 @@ class Seq2Seq(nn.Module):
                 qsize = 1
                 while True:
                     # give up when decoding takes too long
-                    if qsize > 2000: break
+                    if qsize > 20000: break
 
                     score, n = nodes.get()
                     decoder_input_ = n.decoder_input_d
                     decoder_hidden = n.h
-                    if n.wordid == 1 and n.prevNode != None:
+                    if ( n.wordid == 1 and n.prevNode != None) or n.leng == 20:
                         endnodes.append((score, n))
                         # if we reached maximum # of sentences required
                         if len(endnodes) >= number_required:
@@ -228,16 +227,19 @@ class Seq2Seq(nn.Module):
                         else:
                             continue
 
-                    decoder_output, decoder_hidden = self.Decoder(decoder_input_, decoder_hidden)
+                    decoder_output, decoder_hidden_o = self.Decoder(decoder_input_, decoder_hidden)
                     log_prob, indexes = torch.topk(decoder_output.view(-1), args.beam_width)
                     nextnodes = []
-                    logging.info(str(indexes_))
+                    logging.info(str(indexes))
                     for new_k in range(args.beam_width):
                         decoded_t = indexes[new_k].item()
-                        print(decoded_t)
+#                        print(decoded_t)
                         logging.info(str(decoded_t))
                         log_p = log_prob[new_k].item()
-                        node = BeamSearchNode(decoder_hidden, n, decoded_t, n.logp + log_p, n.leng + 1, decoder_output.view(-1,1,self.config['input_size']))
+                        print(log_p)
+                        one_hot_dt = torch.zeros(1,self.config['input_size']).float().to(self.config['device'])
+                        one_hot_dt[0,decoded_t] = 1.
+                        node = BeamSearchNode(decoder_hidden_o, n, decoded_t, n.logp + log_p, n.leng + 1,one_hot_dt.view(1,1,-1))
                         score = -node.eval()
                         nextnodes.append((score, node))
                     for m in range(len(nextnodes)):
@@ -270,7 +272,7 @@ class Seq2Seq(nn.Module):
                     t_list = [self.Data.Vocab_inv[idx.item()] for idx in tar[c_index]]
                     t = ' '.join(t_list)
                     r = ''
-                    for beam_ind in range(len(decoded_batch[c_index])):
+                    for beam_ind in range(args.topk):
                         res = decoded_batch[c_index][beam_ind]
                         res_str = ' '.join([self.Data.Vocab_inv[idx] for idx in res])
                         r += 'Model_Response_'+str(beam_ind)+': '+res_str+'\n'
