@@ -80,11 +80,10 @@ def getTopK(dec_list, topk = 5, Vocab_inv = None, batch_size = 1,seq_length = 10
     logging.info(responses_for_batch)
     return responses_for_batch
 
-def Load_embeddings(dataset):
-    if dataset == 'mwoz':
-        embeddings_file = "mwoz_embedding.txt"
-    else:
-        embeddings_file = "frames_embedding.txt"
+def Load_embeddings(dataset, embeddings):
+    #dataset : mwoz, frames
+    #embeddings : bert, word2vec, glove
+    embeddings_file = dataset + '_'+ embeddings + '.txt'
     embs = []
     words = []
     with open(os.path.join("../Dataset", embeddings_file), 'r', encoding="utf8") as f:
