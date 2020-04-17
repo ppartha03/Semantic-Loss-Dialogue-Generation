@@ -30,10 +30,10 @@ class BeamSearchNode(object):
         reward = torch.rand(1)
         # Add here a function for shaping a reward
 
-        return self.logp / float(self.leng - 1 + 1e-6) + alpha * reward
+        return self.logp / float(self.leng -1 + 1e-6) #+ alpha * reward
 
     def __lt__(self, other):
-        return self.logp < other.logp
+        return self.logp*self.leng < other.logp*other.leng
 
 def getTopK(dec_list, topk = 5, Vocab_inv = None, batch_size = 1,seq_length = 10, thrd_nmb=2):
     global responses_for_batch
