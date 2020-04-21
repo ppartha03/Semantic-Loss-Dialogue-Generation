@@ -1,7 +1,3 @@
-from Eval_metric import meteor
-from Bert_util import Load_embeddings, Bert_loss, Mask_sentence, Posteos_mask, create_id
-from Frames_data_iterator import FramesGraphDataset
-from WoZ_data_iterator import WoZGraphDataset
 from RNN import EncoderRNN, DecoderRNN, Q_predictor, AttnDecoderRNN
 import sys
 import torch
@@ -15,6 +11,8 @@ import re
 import wandb
 sys.path.append('../Utils/')
 
+from Eval_metric import meteor
+from Bert_util import Load_embeddings, Bert_loss, Mask_sentence, Posteos_mask, create_id
 parser = argparse.ArgumentParser()
 # parser.add_argument('--task')
 parser.add_argument('--hidden_size', type=int, default=128)
@@ -60,9 +58,11 @@ args = parser.parse_args()
 save_path = os.path.join(args.save_base, 'MetaDial')
 result_path = os.path.join(save_path, 'Results', args.dataset)
 
-sys.path.append(args.data_path)
 # from nltk.translate.meteor_score import meteor_score
+sys.path.append(args.data_path)
 
+from Frames_data_iterator import FramesGraphDataset
+from WoZ_data_iterator import WoZGraphDataset
 if not os.path.exists(os.path.join(result_path, 'Samples')):
     os.makedirs(os.path.join(result_path, 'Samples'))
 
@@ -253,6 +253,8 @@ class Seq2Seq(nn.Module):
                 self.config['hidden_size'],
                 device=self.config['device'])
 
+            self.optimizer.zero_grad()
+            self.optimizer_dec.zero_grad()
             for di in range(self.Data[i]['encoder_length']):
                 out, hidden_enc = self.Encoder(input_[:, di, :], hidden_enc)
                 context_ = context_ + \
@@ -277,15 +279,15 @@ class Seq2Seq(nn.Module):
                         weight=torch.from_numpy(
                             config['weights']).float()).to(device)
 
-            for di in range(1, self.Data[i]['decoder_length'] - 1):
+            for di in range(self.Data[i]['decoder_length'] - 1):
                 decoder_output, decoder_hidden, _ = self.Decoder(
                     decoder_input_, decoder_hidden, encoder_outputs)
                 if np.random.rand(
-                ) > self.config['teacher_forcing'] and type_ != 'train':
+                ) < self.config['teacher_forcing'] and type_ == 'train':
+                    decoder_input_ = decoder_input[:, di + 1, :]
+                else:
                     decoder_input_ = decoder_output.view(
                         -1, self.config['input_size'])
-                else:
-                    decoder_input_ = decoder_input[:, di + 1, :]
                 seq_loss_a += self.criterion(input=decoder_output[:, -1, :], target=torch.max(
                     decoder_input[:, di + 1, :], dim=1)[-1])
                 dec_list += [decoder_output.view(-1,
@@ -373,8 +375,6 @@ class Seq2Seq(nn.Module):
                         '\n\n')
 
             if type_ == 'train':
-                self.optimizer.zero_grad()
-                self.optimizer_dec.zero_grad()
 
                 train_loss.backward()
                 for O_ in self.Opts:

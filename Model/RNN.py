@@ -140,16 +140,13 @@ class AttnDecoderRNN(nn.Module):
                     (embedded,
                      hidden[0][0]),
                     1)),
-            dim=1).unsqueeze(0).permute(
-                1,
-                2,
-            0)
-        encoder_outputs = encoder_outputs.permute(1, 2, 0)
+            dim=1).unsqueeze(0).view(-1,self.max_length,1)
+        encoder_outputs = encoder_outputs.view(-1, self.hidden_size, self.max_length)
         attn_applied = torch.bmm(encoder_outputs, attn_weights)
 
         output = torch.cat((embedded, attn_applied[:, :, 0]), 1)
         output = self.attn_combine(output).unsqueeze(0)
-        output, hidden = self.lstm(output.permute(1, 0, 2), (h0, c0))
+        output, hidden = self.lstm(output.view(-1,1,self.hidden_size), (h0, c0))
         output = F.log_softmax(self.out(output))
         return output, hidden, attn_weights
 
