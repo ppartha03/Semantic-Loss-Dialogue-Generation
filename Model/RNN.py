@@ -101,11 +101,12 @@ class AttnDecoderRNN(nn.Module):
             output_size,
             num_layers,
             maxlength,
+            embedding,
             drop_out=0,
             bidirectional=False):
         super(AttnDecoderRNN, self).__init__()
         self.hidden_size = hidden_size
-        self.embedding = nn.Embedding(output_size, hidden_size)
+        self.embedding = embedding#nn.Embedding(output_size, hidden_size)
         self.num_layers = num_layers
         self.hidden_size = hidden_size
         self.max_length = maxlength

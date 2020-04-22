@@ -1,4 +1,3 @@
-from Eval_metric import meteor
 from Bert_util import Load_embeddings, Bert_loss, Mask_sentence, Posteos_mask, create_id
 from Frames_data_iterator import FramesGraphDataset
 from WoZ_data_iterator import WoZGraphDataset
@@ -14,6 +13,7 @@ import logging
 import re
 import wandb
 sys.path.append('../Utils/')
+from Eval_metric import meteor
 
 parser = argparse.ArgumentParser()
 # parser.add_argument('--task')
@@ -281,7 +281,7 @@ class Seq2Seq(nn.Module):
                 decoder_output, decoder_hidden, _ = self.Decoder(
                     decoder_input_, decoder_hidden, encoder_outputs)
                 if np.random.rand(
-                ) > self.config['teacher_forcing'] and type_ != 'train':
+                ) < self.config['teacher_forcing'] and type_ == 'train':
                     decoder_input_ = decoder_output.view(
                         -1, self.config['input_size'])
                 else:
