@@ -1,9 +1,3 @@
-<<<<<<< HEAD
-from Bert_util import Load_embeddings, Bert_loss, Mask_sentence, Posteos_mask, create_id
-from Frames_data_iterator import FramesGraphDataset
-from WoZ_data_iterator import WoZGraphDataset
-=======
->>>>>>> bea6110b75fbec45b5bd69f164c618213d95b026
 from RNN import EncoderRNN, DecoderRNN, Q_predictor, AttnDecoderRNN
 import sys
 import torch
