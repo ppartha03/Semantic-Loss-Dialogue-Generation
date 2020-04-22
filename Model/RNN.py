@@ -106,7 +106,7 @@ class AttnDecoderRNN(nn.Module):
             bidirectional=False):
         super(AttnDecoderRNN, self).__init__()
         self.hidden_size = hidden_size
-        self.embedding = embedding#nn.Embedding(output_size, hidden_size)
+        self.embedding = nn.Embedding(output_size, hidden_size, padding_idx=3)#embedding#nn.Embedding(output_size, hidden_size)
         self.num_layers = num_layers
         self.hidden_size = hidden_size
         self.max_length = maxlength
@@ -141,17 +141,14 @@ class AttnDecoderRNN(nn.Module):
                     (embedded,
                      hidden[0][0]),
                     1)),
-            dim=1).unsqueeze(0).permute(
-                1,
-                2,
-            0)
-        encoder_outputs = encoder_outputs.permute(1, 2, 0)
+            dim=1).unsqueeze(0).view(-1,self.max_length,1)
+        encoder_outputs = encoder_outputs.view(-1, self.hidden_size, self.max_length)
         attn_applied = torch.bmm(encoder_outputs, attn_weights)
 
         output = torch.cat((embedded, attn_applied[:, :, 0]), 1)
         output = self.attn_combine(output).unsqueeze(0)
-        output, hidden = self.lstm(output.permute(1, 0, 2), (h0, c0))
-        output = F.log_softmax(self.out(output))
+        output, hidden = self.lstm(output.view(-1,1,self.hidden_size), (h0, c0))
+        output = F.log_softmax(self.out(output), dim = 2)
         return output, hidden, attn_weights
 
 # Recurrent neural network (many-to-one)
@@ -168,9 +165,8 @@ class EncoderRNN(nn.Module):
         self.hidden_size = hidden_size
         self.input_size = input_size
         self.num_layers = num_layers
-        self.embedding = nn.Embedding(input_size, hidden_size)
         self.lstm = nn.LSTM(
-            hidden_size,
+            input_size,
             hidden_size,
             num_layers,
             dropout=0,
@@ -188,17 +184,17 @@ class EncoderRNN(nn.Module):
         h0 = hidden[0]
         # torch.zeros(self.multiplier*self.num_layers, x.size(0), self.hidden_size).to(device)
         c0 = hidden[1]
-        x = torch.argmax(x, dim=1)
-        e = self.embedding(x)
+#        x = torch.argmax(x, dim=1)
+#        e = self.embedding(x)
         # Forward propagate LSTM
         if self.bi_directional:
             # out: tensor of shape (batch_size, seq_length, hidden_size)
-            out_, hid_ = self.lstm(e.view(-1, 1, self.hidden_size), (h0, c0))
+            out_, hid_ = self.lstm(x.view(-1, 1, self.input_size), (h0, c0))
             out = out_[:, :, self.hidden_size:] + out_[:, :, :self.hidden_size]
             # Decode the hidden state of the last time step
             return hid_
         else:
             # out: tensor of shape (batch_size, seq_length, hidden_size)
-            out, hid_ = self.lstm(e.view(-1, 1, self.hidden_size), (h0, c0))
+            out, hid_ = self.lstm(x.view(-1, 1, self.input_size), (h0, c0))
             # Decode the hidden state of the last time step
             return out, hid_
