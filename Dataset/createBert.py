@@ -1,5 +1,5 @@
-from Frames_data_iterator import FramesGraphDataset
-from WoZ_data_iterator import WoZGraphDataset
+from Dataset_utils.Frames_data_iterator import FramesGraphDataset
+from Dataset_utils.WoZ_data_iterator import WoZGraphDataset
 from bert_embedding import BertEmbedding
 import numpy as np
 
@@ -7,7 +7,7 @@ import argparse
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', default = 'frames')
-parser.add_argument('--embeddings', default = 'bert')
+parser.add_argument('--embeddings', default = 'bert', choices=["bert", "word2vec", "glove"])
 args = parser.parse_args()
 
 if args.dataset == 'frames':

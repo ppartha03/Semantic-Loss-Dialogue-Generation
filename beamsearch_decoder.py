@@ -1,16 +1,18 @@
-from RNN import EncoderRNN, DecoderRNN, Q_predictor
-import sys
+from Model.RNN import EncoderRNN, DecoderRNN, Q_predictor
+from Utils.Eval_metric import meteor
+from Dataset_utils.Frames_data_iterator import FramesGraphDataset
+from Dataset_utils.WoZ_data_iterator import WoZGraphDataset
+from Utils.Bert_util import Load_embeddings, Bert_loss, Mask_sentence, getTopK, Posteos_mask, create_id, BeamSearchNode
 import torch
 import torch.nn as nn
-# from torch.utils.tensorboard import SummaryWriter
 import numpy as np
 import argparse
 import os
 import logging
-import wandb
 import operator
 import wandb
-sys.path.append('../Utils/')
+from nltk.translate.meteor_score import meteor_score
+from queue import PriorityQueue
 
 parser = argparse.ArgumentParser()
 #parser.add_argument('--task')
@@ -46,14 +48,6 @@ args = parser.parse_args()
 
 save_path = os.path.join(args.save_base, 'MetaDial')
 result_path = os.path.join(save_path, 'Results', args.dataset)
-
-sys.path.append(args.data_path)
-from WoZ_data_iterator import WoZGraphDataset
-from Frames_data_iterator import FramesGraphDataset
-from Bert_util import Load_embeddings, Bert_loss, Mask_sentence, getTopK, Posteos_mask, create_id, BeamSearchNode
-
-from nltk.translate.meteor_score import meteor_score
-from queue import PriorityQueue
 
 if not os.path.exists(os.path.join(result_path, 'Samples')):
     os.makedirs(os.path.join(result_path, 'Samples'))

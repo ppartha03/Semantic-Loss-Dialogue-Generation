@@ -130,12 +130,13 @@ def Mask_sentence(res, mask, config):
         res_masked = res_masked.masked_fill(~mask_posteos, mask_ind)
     return res_masked
 
+
 def Posteos_mask(res, config):
     # mask_ind here corresponds to the index of the <pad> words
     mask_ind = config['pad_index']
     eos_ind = config['eos_index']
     device = config['device']
-    res_masked = res
+    res_masked = res.clone()
     mask_posteos = res == eos_ind
     indices = np.arange(res.shape[1])
     indices = torch.from_numpy(indices).to(device)
@@ -145,6 +146,7 @@ def Posteos_mask(res, config):
     mask_posteos = indices <= eos_positions
     res_masked = res_masked.masked_fill(~mask_posteos, mask_ind)
     return res_masked
+
 
 # Create model id
 def create_id(config, saved_models, reload=False, run_id=-1, training_type='train'):
