@@ -101,7 +101,6 @@ class AttnDecoderRNN(nn.Module):
             output_size,
             num_layers,
             maxlength,
-            embedding,
             drop_out=0,
             bidirectional=False):
         super(AttnDecoderRNN, self).__init__()
