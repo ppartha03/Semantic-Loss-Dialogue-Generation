@@ -27,7 +27,7 @@ parser.add_argument('--results_path', type=str, default='.')
 parser.add_argument('--encoder_learning_rate', type=float, default=0.004)
 parser.add_argument('--decoder_learning_rate', type=float, default=0.004)
 parser.add_argument('--output_dropout', type=float, default=0.0)
-parser.add_argument('--data_path', type=str, default="../Dataset")
+parser.add_argument('--data_path', type=str, default="./Dataset")
 parser.add_argument('--save_every_epoch', action='store_true')
 parser.add_argument('--exp_id', type=int, default=0)
 parser.add_argument('--num_epochs', type=int, default=100)
@@ -53,13 +53,17 @@ config = vars(args)
 config["run_id"] = "exp_" + str(args.exp_id) + "_seed_" + str(args.seed)
 sys.path.append(args.data_path)
 
-result_path = os.path.join(args.results_path, "results", args.dataset, config["run_id"])
+result_path = os.path.join(args.results_path, "Results", args.dataset, config["run_id"])
 if not os.path.exists(result_path):
     os.makedirs(result_path)
 
 saved_models = os.path.join(result_path, 'Saved_Models')
 if not os.path.exists(saved_models):
     os.makedirs(saved_models)
+
+samples_path = os.path.join(result_path, 'Samples')
+if not os.path.exists(samples_path):
+    os.makedirs(samples_path)
 
 config_fname = os.path.join(result_path, 'config.txt')
 f = open(config_fname,"w")
@@ -71,19 +75,26 @@ device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 config['device'] = device
 
 if args.dataset == 'mwoz':
-    config['data'] = WoZGraphDataset(
-        Data_dir=config['data_path'] + '/MULTIWOZ2/')
-elif args.dataset == 'frames':
-    config['data'] = FramesGraphDataset(
+    Data_train = WoZGraphDataset(
+    Data_dir=config['data_path'] + '/MULTIWOZ2/')
+    Data_valid = WoZGraphDataset(
+        Data_dir=config['data_path'] + '/MULTIWOZ2/', suffix='valid')
+    Data_test = WoZGraphDataset(
+        Data_dir=config['data_path'] + '/MULTIWOZ2/', suffix='test')
+else:
+    Data_train = FramesGraphDataset(
         Data_dir=config['data_path'] + '/Frames-dataset/')
-
+    Data_valid = FramesGraphDataset(
+        Data_dir=config['data_path'] + '/Frames-dataset/', suffix='valid')
+    Data_test = FramesGraphDataset(
+        Data_dir=config['data_path'] + '/Frames-dataset/', suffix='test')
 
 
 # Hyper-parameters
 config['sequence_length'] = 101
-config['input_size'] = config['data'].vlen
+config['input_size'] = Data_train.vlen
 config['num_layers'] = 1
-config['output_size'] = config['data'].vlen
+config['output_size'] = Data_train.vlen
 
 config['best_mle_valid'] = 10000
 config['best_mle_valid_epoch'] = 0
@@ -110,7 +121,6 @@ class Seq2Seq(nn.Module):
     def __init__(self, config):
         super(Seq2Seq, self).__init__()
         # Encoder_model can be s2s or hred
-        self.Data = config['data']
         self.config = config
         self.Encoder = EncoderRNN(
             self.config['input_size'],
@@ -122,8 +132,7 @@ class Seq2Seq(nn.Module):
             self.config['output_size'],
             self.config['num_layers'],
             self.config['sequence_length']).to(self.config['device'])
-        _, self.weights = Load_embeddings(
-            config['dataset'], config['embeddings'])
+        _, self.weights = Load_embeddings(config['dataset'], config['embeddings'], config['data_path'])
         self.Bert_embedding = nn.Embedding.from_pretrained(
             self.weights, freeze=True).to(self.config['device'])
         # Loss and optimizer
@@ -152,12 +161,11 @@ class Seq2Seq(nn.Module):
         loss_reinforce_inf = 0.
         train_loss_inf = 0.
 
-        self.Data = Data
         self.sample_saver = sample_saver
         count_examples = 0.
         for i in range(total_step):
             seq_loss_a = 0.
-            batch_size = self.Data[i]['input'].shape[0]
+            batch_size = Data[i]['input'].shape[0]
             count_examples += batch_size
             hidden_enc = (
                 torch.zeros(
@@ -172,13 +180,13 @@ class Seq2Seq(nn.Module):
                     device=self.config['device']))
 
             input_ = torch.from_numpy(
-                self.Data[i]['input']).to(
+                Data[i]['input']).to(
                 self.config['device']).view(
                 batch_size,
                 self.config['sequence_length'],
                 self.config['input_size'])
             decoder_input = torch.from_numpy(
-                self.Data[i]['target']).to(
+                Data[i]['target']).to(
                 self.config['device']).view(
                 batch_size,
                 self.config['sequence_length'],
@@ -198,7 +206,7 @@ class Seq2Seq(nn.Module):
 
             self.optimizer.zero_grad()
             self.optimizer_dec.zero_grad()
-            for di in range(self.Data[i]['encoder_length']):
+            for di in range(Data[i]['encoder_length']):
                 out, hidden_enc = self.Encoder(input_[:, di, :], hidden_enc)
                 context_ = context_ + \
                     [torch.argmax(input_[:, di, :].view(batch_size, -1), dim=1).view(-1, 1)]
@@ -222,7 +230,7 @@ class Seq2Seq(nn.Module):
                         weight=torch.from_numpy(
                             config['mask']).float()).to(device)
 
-            for di in range(self.Data[i]['decoder_length'] - 1):
+            for di in range(Data[i]['decoder_length'] - 1):
                 decoder_output, decoder_hidden, _ = self.Decoder(
                     decoder_input_, decoder_hidden, encoder_outputs)
 
@@ -249,8 +257,8 @@ class Seq2Seq(nn.Module):
             res_premasked = torch.cat(response_premasked, dim=1)
             tar = torch.cat(target_response, dim=1)
 
-            loss = seq_loss_a / batch_size / self.Data[i]['decoder_length']
-            # seq_loss_a.item()/batch_size/self.Data[i]['decoder_length']
+            loss = seq_loss_a / batch_size / Data[i]['decoder_length']
+            # seq_loss_a.item()/batch_size/Data[i]['decoder_length']
             loss_mle_inf += loss.item() / total_step
 
             res_premasked = Posteos_mask(res_premasked, config)
@@ -281,13 +289,13 @@ class Seq2Seq(nn.Module):
 
             if type_ != 'train':
                 for c_index in range(con.shape[0]):
-                    c = ' '.join([self.Data.Vocab_inv[idx.item()]
+                    c = ' '.join([Data.Vocab_inv[idx.item()]
                                   for idx in con[c_index]])
-                    t_list = [self.Data.Vocab_inv[idx.item()]
+                    t_list = [Data.Vocab_inv[idx.item()]
                               for idx in tar[c_index]]
                     t = ' '.join(t_list)
 #                    cnt += 1
-                    r_list = [self.Data.Vocab_inv[idx.item()]
+                    r_list = [Data.Vocab_inv[idx.item()]
                               for idx in res[c_index]]
                     r = ' '.join(r_list)
                     # if '<eos>' in t_list:
@@ -339,14 +347,6 @@ class Seq2Seq(nn.Module):
 
 if __name__ == '__main__':
     logging.basicConfig(level=logging.INFO)
-    if args.dataset == 'mwoz':
-        Data_train = WoZGraphDataset()
-        Data_valid = WoZGraphDataset(suffix='valid')
-        Data_test = WoZGraphDataset(suffix='test')
-    else:
-        Data_train = FramesGraphDataset()
-        Data_valid = FramesGraphDataset(suffix='valid')
-        Data_test = FramesGraphDataset(suffix='test')
 
     Model = Seq2Seq(config)
     if os.path.exists(os.path.join(saved_models, config['run_id'] + '_last')):
@@ -382,9 +382,16 @@ if __name__ == '__main__':
             torch.save({'model_State_dict': Model.state_dict(), 'config': config}, os.path.join(
                 saved_models, config['run_id'] + '_' + str(epoch)))
 
+        sample_saver_eval = open(os.path.join(
+            samples_path,
+            "samples_valid_" +
+            config['run_id'] + '_' +
+            str(epoch) +
+            '.txt'),
+            'a+')
         loss_mle_valid, combined_loss_valid, meteor_valid = Model.modelrun(Data=Data_valid, type_='eval',
                                                                            total_step=Data_valid.num_batches,
-                                                                           ep=epoch)
+                                                                           ep=epoch, sample_saver=sample_saver_eval)
         if meteor_valid > config['meteor_valid']:
             config['meteor_valid'] = meteor_valid
             if config["wandb_project"] is not None:
@@ -434,7 +441,7 @@ if __name__ == '__main__':
     Model.load_state_dict(checkpoint['model_State_dict'])
 
     sample_saver_valid = open(os.path.join(
-        result_path,
+        samples_path,
         "samples_valid_" +
         config['run_id'] + '_' +
         args.validation_model +
@@ -444,7 +451,7 @@ if __name__ == '__main__':
                    sample_saver=sample_saver_valid)
 
     sample_saver_test = open(os.path.join(
-        result_path,
+        samples_path,
         "samples_test_" +
         config['run_id'] + '_' +
         args.validation_model +

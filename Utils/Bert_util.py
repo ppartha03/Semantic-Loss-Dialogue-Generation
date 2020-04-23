@@ -80,13 +80,13 @@ def getTopK(dec_list, topk = 5, Vocab_inv = None, batch_size = 1,seq_length = 10
     logging.info(responses_for_batch)
     return responses_for_batch
 
-def Load_embeddings(dataset, embeddings):
+def Load_embeddings(dataset, embeddings, embeddings_path="."):
     #dataset : mwoz, frames
     #embeddings : bert, word2vec, glove
     embeddings_file = dataset + '_'+ embeddings + '.txt'
     embs = []
     words = []
-    with open(os.path.join("../Dataset", embeddings_file), 'r', encoding="utf8") as f:
+    with open(os.path.join(embeddings_path, embeddings_file), 'r', encoding="utf8") as f:
         for line in f:
             values = line.split('<del>')
             words.append(values[0])
