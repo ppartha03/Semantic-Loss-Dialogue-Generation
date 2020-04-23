@@ -349,7 +349,11 @@ class Seq2Seq(nn.Module):
 
 
 if __name__ == '__main__':
-    logging.basicConfig(filename = logfile_name, filemode = 'a',level=logging.INFO)
+    logging.basicConfig(filename=logfile_name,
+                        filemode='a+',
+                        format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
+                        datefmt='%H:%M:%S',
+                        level=logging.DEBUG)
 
     Model = Seq2Seq(config)
     if os.path.exists(os.path.join(saved_models, config['run_id'] + '_last')):
@@ -403,8 +407,9 @@ if __name__ == '__main__':
             torch.save({'model_State_dict': Model.state_dict(), 'config': config},
                        os.path.join(saved_models, config['run_id'] + '_best_meteor'))
             # save the best model to wandb
-            torch.save({'model_State_dict': Model.state_dict(), 'config': config},
-            os.path.join(wandb.run.dir, config['run_id'] + '_best_meteor'))
+            if config["wandb_project"] is not None:
+                torch.save({'model_State_dict': Model.state_dict(), 'config': config},
+                os.path.join(wandb.run.dir, config['run_id'] + '_best_meteor'))
         if loss_mle_valid < config['best_mle_valid']:
             config['best_mle_valid'] = loss_mle_valid
             if config["wandb_project"] is not None:
