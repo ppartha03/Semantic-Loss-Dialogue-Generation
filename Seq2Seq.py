@@ -39,7 +39,7 @@ parser.add_argument('--sentence_embedding', type=str, default='mean')
 # embedding calculation)
 parser.add_argument('--no_prebert_mask', action='store_true')
 #Use None for not logging using wandb
-parser.add_argument('--wandb_project', type=str, default='attnsemloss')
+parser.add_argument('--wandb_project', type=str, default=None)
 # which model to use for validation/test, 'best_mle' or 'best_combined',
 # 'best_meteor'
 parser.add_argument('--validation_model', type=str, default='best_meteor',
