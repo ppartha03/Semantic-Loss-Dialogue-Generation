@@ -50,6 +50,8 @@ parser.add_argument(
     default='bert')  # glove, word2vec, bert
 args = parser.parse_args()
 config = vars(args)
+if config["wandb_project"] == 'None' or config["wandb_project"] == 'none':
+    config["wandb_project"] = None
 config["run_id"] = "exp_" + str(args.exp_id) + "_seed_" + str(args.seed)
 sys.path.append(args.data_path)
 
