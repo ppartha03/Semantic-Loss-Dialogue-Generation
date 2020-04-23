@@ -152,7 +152,7 @@ class Seq2Seq(nn.Module):
         self.config = config
         self.Encoder = EncoderRNN(self.config['input_size'], self.config['hidden_size'], self.config['num_layers']).to(self.config['device'])
         self.Decoder = DecoderRNN(self.config['hidden_size'], self.config['output_size'], self.config['input_size'], self.config['num_layers']).to(self.config['device'])
-        _, self.weights = Load_embeddings(config['dataset'], )
+        _, self.weights = Load_embeddings(config['dataset'], config['embeddings'], config['dataset'])
         self.Bert_embedding = nn.Embedding.from_pretrained(self.weights, freeze=True).to(self.config['device'])
         # Loss and optimizer
         self.criterion = nn.NLLLoss(weight=torch.from_numpy(config['weights']).float()).to(self.config['device'])
