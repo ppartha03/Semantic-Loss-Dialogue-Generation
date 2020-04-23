@@ -68,6 +68,7 @@ if not os.path.exists(samples_path):
     os.makedirs(samples_path)
 
 config_fname = os.path.join(result_path, 'config.txt')
+logfile_name = os.path.join(result_path,'logs.txt')
 f = open(config_fname,"w")
 f.write(str(config))
 f.close()
@@ -348,7 +349,7 @@ class Seq2Seq(nn.Module):
 
 
 if __name__ == '__main__':
-    logging.basicConfig(level=logging.INFO)
+    logging.basicConfig(filename = logfile_name, filemode = 'a',level=logging.INFO)
 
     Model = Seq2Seq(config)
     if os.path.exists(os.path.join(saved_models, config['run_id'] + '_last')):
