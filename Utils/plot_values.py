@@ -1,4 +1,5 @@
 import seaborn as sns
+sns.set()
 import pandas as pd
 import csv
 import os
@@ -11,7 +12,7 @@ args = parser.parse_args()
 
 # requires csv with headers alpha values, epochs, meteor
 def createData(dataset): # alpha->exp mapping {1:'1E-1',2:'1E-3'}
-    mapdict = {2:'Baseline', 1: '1E-3', 0: '1E-2',3: '1E-1', 4: '1E0', 5:'1E1', 6:'1E2'}
+    mapdict = {2:'Baseline', 1:'1E-3',4:'1E0'}#{2:'Baseline', 1: '1E-3', 0: '1E-2',3: '1E-1', 4: '1E0', 5:'1E1', 6:'1E2'}
     seeds = [100,101,102,103,104]
     fieldnames=['alpha','epoch','meteor']
     target = open("results.csv", "w")
@@ -33,7 +34,7 @@ def createData(dataset): # alpha->exp mapping {1:'1E-1',2:'1E-3'}
                         ep+=1
     target.close()
 
-def createGraph(yrange=[4,40], filename = 'results.csv'):
+def createGraph(yrange=[5,20], filename = 'results.csv'):
     plt.ylim(yrange[0],yrange[1])
     sns.lineplot(x = 'epoch', y ='meteor', hue = 'alpha',data = pd.read_csv(filename))
     plt.savefig('plot.png')
