@@ -270,13 +270,12 @@ class Seq2Seq(nn.Module):
                 self.Bert_embedding(tar),
                 config['sentence_embedding'])
 
-            loss_bert_inf += loss_bert.item() / total_step
+            loss_bert_inf += torch.mean(loss_bert) / total_step
 
             dec = torch.cat(dec_list, dim=1)
             # Extracting only the exact words: greedy
             words = torch.max(dec,dim=2)[0]
-            print(words.shape, loss_bert.shape)
-            reinforce_loss = torch.mean(-torch.matmul(words, loss_bert))
+            reinforce_loss = torch.mean(-torch.matmul(loss_bert.view(1,-1),words))
             loss_reinforce_inf += reinforce_loss.item() / total_step
 
             if config['loss'] == 'nll':
