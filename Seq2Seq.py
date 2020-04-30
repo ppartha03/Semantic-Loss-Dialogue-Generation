@@ -273,7 +273,10 @@ class Seq2Seq(nn.Module):
             loss_bert_inf += loss_bert.item() / total_step
 
             dec = torch.cat(dec_list, dim=1)
-            reinforce_loss = torch.mean(-torch.mul(dec, loss_bert))
+            # Extracting only the exact words: greedy
+            words = torch.max(dec,dim=2)[0]
+            print(words.shape, loss_bert.shape)
+            reinforce_loss = torch.mean(-torch.matmul(words, loss_bert))
             loss_reinforce_inf += reinforce_loss.item() / total_step
 
             if config['loss'] == 'nll':

@@ -43,4 +43,3 @@ if __name__ == '__main__':
     if not os.path.exists('results.csv'):
         createData(args.dataset)
     createGraph()
-
