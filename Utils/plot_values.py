@@ -12,7 +12,7 @@ args = parser.parse_args()
 
 # requires csv with headers alpha values, epochs, meteor
 def createData(dataset): # alpha->exp mapping {1:'1E-1',2:'1E-3'}
-    mapdict = {2:'Baseline', 1:'1E-3',4:'1E0'}#{2:'Baseline', 1: '1E-3', 0: '1E-2',3: '1E-1', 4: '1E0', 5:'1E1', 6:'1E2'}
+    mapdict = {2:'Baseline', 1: '1E-3', 0: '1E-2',3: '1E-1', 4: '1E0', 5:'1E1', 6:'1E2'}#{2:'Baseline', 1:'1E-3',4:'1E0'}#{2:'Baseline', 1: '1E-3', 0: '1E-2',3: '1E-1', 4: '1E0', 5:'1E1', 6:'1E2'}
     seeds = [100,101,102,103,104]
     fieldnames=['alpha','epoch','meteor']
     target = open("results.csv", "w")

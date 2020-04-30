@@ -350,10 +350,8 @@ class Seq2Seq(nn.Module):
 
 if __name__ == '__main__':
     logging.basicConfig(filename=logfile_name,
-                        filemode='a+',
-                        format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
-                        datefmt='%H:%M:%S',
-                        level=logging.DEBUG)
+                        filemode='a',
+                        level=logging.INFO)
 
     Model = Seq2Seq(config)
     if os.path.exists(os.path.join(saved_models, config['run_id'] + '_last')):
