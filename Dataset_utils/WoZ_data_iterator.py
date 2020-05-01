@@ -6,7 +6,7 @@ import _pickle as cPickle
 import numpy as np
 from torch.utils.data import Dataset, DataLoader
 
-max_length = 100
+max_length = 99
 class WoZGraphDataset(Dataset):
     def __init__(self, Data_dir = '../Dataset/MULTIWOZ2/',suffix = 'train',batch_size = 1):
         #assert task_id > 0 and task_id < 21
@@ -89,8 +89,8 @@ class WoZGraphDataset(Dataset):
                         vertices_bow += [np.zeros((1,self.vlen),dtype = np.float32).sum(axis = 0)]
                         edges_bow += [np.zeros((1,self.elen),dtype = np.float32).sum(axis = 0)]
                 indices = [self.Vocab[text[x].strip()] if text[x] in self.Vocab else 2 for x in range(len(text))]
-                indices = indices[-(max_length - 3):]
-                indices = [0]+indices+[1]+[3]*(max_length-len(indices)-1)
+                indices = indices[-max_length:]
+                indices = [0]+indices+[1]+[3]*(max_length-len(indices))
                 one_hot_sent = np.zeros((len(indices),self.vlen),dtype = np.float32)
                 one_hot_sent[np.arange(len(indices)),indices] = 1.
                 #print(k)

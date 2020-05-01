@@ -235,7 +235,7 @@ class Seq2Seq(nn.Module):
                         weight=torch.from_numpy(
                             mask_numpy).float()).to(device)
 
-            for di in range(Data[i]['decoder_length'] - 1):
+            for di in range(Data[i]['decoder_length']):
                 decoder_output, decoder_hidden, _ = self.Decoder(
                     decoder_input_, decoder_hidden, encoder_outputs)
 
@@ -248,7 +248,7 @@ class Seq2Seq(nn.Module):
                     decoder_input[:, di + 1, :], dim=1)[-1])
                 dec_list += [decoder_output.view(-1,1, config['input_size'])]
                 target_response = target_response + \
-                    [torch.argmax(decoder_input[:, di, :].view(batch_size, -1), dim=1).view(-1, 1)]
+                    [torch.argmax(decoder_input[:, di + 1, :].view(batch_size, -1), dim=1).view(-1, 1)]
                 response_ = response_ + \
                     [torch.argmax(decoder_output.view(batch_size, -1), dim=1).view(-1, 1)]
 
