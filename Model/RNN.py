@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+from torch.distributions.categorical import Categorical
 
 # # Device configuration
 device = torch.device('cuda', 0)
@@ -95,19 +96,12 @@ class DecoderRNN(nn.Module):
 
 
 class AttnDecoderRNN(nn.Module):
-    def __init__(
-            self,
-            hidden_size,
-            output_size,
-            num_layers,
-            maxlength,
-            drop_out=0,
-            bidirectional=False):
+    def __init__(self, hidden_size, vocab_size, num_layers, maxlength, drop_out=0, bidirectional=False):
         super(AttnDecoderRNN, self).__init__()
         self.hidden_size = hidden_size
-        self.embedding = nn.Embedding(output_size, hidden_size, padding_idx=3)#embedding#nn.Embedding(output_size, hidden_size)
+        self.vocab_size = vocab_size
+        self.embedding = nn.Embedding(vocab_size, hidden_size, padding_idx=3)
         self.num_layers = num_layers
-        self.hidden_size = hidden_size
         self.max_length = maxlength
         self.dropout_p = drop_out
         self.attn = nn.Linear(self.hidden_size * 2, self.max_length)
@@ -121,18 +115,15 @@ class AttnDecoderRNN(nn.Module):
             bidirectional=bidirectional,
             batch_first=True)
         self.bi_directional = bidirectional
-        self.out = nn.Linear(hidden_size, output_size)
+        self.out = nn.Linear(hidden_size, vocab_size)
         self.softmax = nn.LogSoftmax(dim=2)
         self.sigmoid = nn.Sigmoid()
 
     def forward(self, input_, hidden, encoder_outputs):
-        # torch.zeros(self.num_layers, input_.size(0), self.hidden_size).to(device)
         h0 = hidden[0]
-        # torch.zeros(self.num_layers, input_.size(0), self.hidden_size).to(device)
         c0 = hidden[1]
-        output = torch.argmax(input_, dim=1)
-        embedded = self.embedding(output)
-        #embedded = self.dropout(embedded)
+
+        embedded = self.embedding(input_)
 
         attn_weights = F.softmax(
             self.attn(
@@ -154,18 +145,14 @@ class AttnDecoderRNN(nn.Module):
 
 
 class EncoderRNN(nn.Module):
-    def __init__(
-            self,
-            input_size,
-            hidden_size,
-            num_layers,
-            bi_directional=False):
+    def __init__(self, vocab_size, hidden_size, num_layers, bi_directional=False):
         super(EncoderRNN, self).__init__()
         self.hidden_size = hidden_size
-        self.input_size = input_size
+        self.vocab_size = vocab_size
         self.num_layers = num_layers
+        self.embedding = nn.Embedding(vocab_size, hidden_size, padding_idx=3)
         self.lstm = nn.LSTM(
-            input_size,
+            hidden_size,
             hidden_size,
             num_layers,
             dropout=0,
@@ -179,21 +166,19 @@ class EncoderRNN(nn.Module):
 
     def forward(self, x, hidden):
         # Set initial hidden and cell states
-        # torch.zeros(self.multiplier*self.num_layers, x.size(0), self.hidden_size).to(device)
         h0 = hidden[0]
-        # torch.zeros(self.multiplier*self.num_layers, x.size(0), self.hidden_size).to(device)
         c0 = hidden[1]
-#        x = torch.argmax(x, dim=1)
-#        e = self.embedding(x)
+        embedded = self.embedding(x).unsqueeze(1)
+
         # Forward propagate LSTM
         if self.bi_directional:
             # out: tensor of shape (batch_size, seq_length, hidden_size)
-            out_, hid_ = self.lstm(x.view(-1, 1, self.input_size), (h0, c0))
+            out_, hid_ = self.lstm(embedded, (h0, c0))
             out = out_[:, :, self.hidden_size:] + out_[:, :, :self.hidden_size]
             # Decode the hidden state of the last time step
-            return hid_
+            return out, hid_
         else:
             # out: tensor of shape (batch_size, seq_length, hidden_size)
-            out, hid_ = self.lstm(x.view(-1, 1, self.input_size), (h0, c0))
+            out, hid_ = self.lstm(embedded, (h0, c0))
             # Decode the hidden state of the last time step
             return out, hid_

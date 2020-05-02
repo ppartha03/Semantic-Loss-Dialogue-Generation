@@ -95,7 +95,7 @@ def Load_embeddings(dataset, embeddings, embeddings_path="."):
     return words, torch.tensor(embs)
 
 
-def Bert_loss(output_embeddings, target_embeddings, sentence_embedding):
+def Sem_loss(output_embeddings, target_embeddings, sentence_embedding):
     if sentence_embedding == "sum":
         output_sen_embedding = torch.sum(output_embeddings, dim=1)
         target_sen_embedding = torch.sum(target_embeddings, dim=1)

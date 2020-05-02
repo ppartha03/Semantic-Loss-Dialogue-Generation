@@ -1,6 +1,6 @@
-from Model.RNN import EncoderRNN, DecoderRNN, Q_predictor, AttnDecoderRNN
+from Model.RNN import EncoderRNN, AttnDecoderRNN
 from Utils.Eval_metric import meteor
-from Utils.Bert_util import Load_embeddings, Bert_loss, Mask_sentence, Posteos_mask, create_id
+from Utils.Bert_util import Load_embeddings, Sem_loss, Mask_sentence, Posteos_mask, create_id
 from Dataset_utils.Frames_data_iterator import FramesGraphDataset
 from Dataset_utils.WoZ_data_iterator import WoZGraphDataset
 import sys
@@ -11,6 +11,7 @@ import argparse
 import os
 import logging
 import wandb
+from torch.distributions.categorical import Categorical
 
 parser = argparse.ArgumentParser()
 # parser.add_argument('--task')
@@ -21,7 +22,7 @@ parser.add_argument('--loss', type=str, default='combine')
 parser.add_argument('--batch_size', type=int, default=8)
 parser.add_argument('--alpha', type=float, default=0.0)
 parser.add_argument('--toggle_loss', type=float, default=0.5)
-parser.add_argument('--teacher_forcing', type=float, default=0.1)
+parser.add_argument('--teacher_forcing', type=float, default=1.0)
 parser.add_argument('--change_nll_mask', action='store_true')
 parser.add_argument('--results_path', type=str, default='.')
 parser.add_argument('--encoder_learning_rate', type=float, default=0.004)
@@ -107,8 +108,7 @@ config['meteor_valid'] = 0
 config['meteor_valid_epoch'] = 0
 
 # Create model id
-config['mask'] = np.hstack(
-    [np.array([1, 1, 1, 0]), np.ones(config['input_size'] - 4)])
+config['mask_special_indices'] = np.array([0, 1, 1, 0])
 config['pad_index'] = 3
 config['eos_index'] = 1
 config['epoch'] = 0
@@ -125,24 +125,20 @@ class Seq2Seq(nn.Module):
         super(Seq2Seq, self).__init__()
         # Encoder_model can be s2s or hred
         self.config = config
-        self.Encoder = EncoderRNN(
-            self.config['input_size'],
-            self.config['hidden_size'],
-            self.config['num_layers']).to(
+        self.mask = np.hstack(
+            [config['mask_special_indices'],
+             np.ones(config['input_size'] - len(config['mask_special_indices']))])
+        self.Encoder = EncoderRNN(self.config['input_size'], self.config['hidden_size'], self.config['num_layers']).to(
             self.config['device'])
-        self.Decoder = AttnDecoderRNN(
-            self.config['hidden_size'],
-            self.config['output_size'],
-            self.config['num_layers'],
-            self.config['sequence_length']).to(self.config['device'])
+        self.Decoder = AttnDecoderRNN(self.config['hidden_size'], self.config['output_size'], self.config['num_layers'],
+                                      self.config['sequence_length']).to(self.config['device'])
         _, self.weights = Load_embeddings(config['dataset'], config['embeddings'], config['data_path'])
-        self.Bert_embedding = nn.Embedding.from_pretrained(
+        self.Sem_embedding = nn.Embedding.from_pretrained(
             self.weights, freeze=True).to(self.config['device'])
         # Loss and optimizer
         self.criterion = nn.NLLLoss(
             weight=torch.from_numpy(
-                config['mask']).float()).to(
-            self.config['device'])
+                self.mask).float()).to(self.config['device'])
         # criterion_2 = nn.CrossEntropyLoss().to(self.config['device'])
 
         self.optimizer = torch.optim.RMSprop(
@@ -163,120 +159,149 @@ class Seq2Seq(nn.Module):
         loss_bert_inf = 0.
         loss_reinforce_inf = 0.
         train_loss_inf = 0.
+        config = self.config
 
         self.sample_saver = sample_saver
         count_examples = 0.
         for i in range(total_step):
-            seq_loss_a = 0.
             batch_size = Data[i]['input'].shape[0]
             count_examples += batch_size
             hidden_enc = (
                 torch.zeros(
-                    self.config['num_layers'],
+                    config['num_layers'],
                     batch_size,
-                    self.config['hidden_size'],
-                    device=self.config['device']),
+                    config['hidden_size'],
+                    device=config['device']),
                 torch.zeros(
-                    self.config['num_layers'],
+                    config['num_layers'],
                     batch_size,
-                    self.config['hidden_size'],
-                    device=self.config['device']))
+                    config['hidden_size'],
+                    device=config['device']))
 
             input_ = torch.from_numpy(
                 Data[i]['input']).to(
-                self.config['device']).view(
+                config['device']).to(
+                torch.int64).view(
                 batch_size,
-                self.config['sequence_length'],
-                self.config['input_size'])
+                config['sequence_length'])
             decoder_input = torch.from_numpy(
                 Data[i]['target']).to(
-                self.config['device']).view(
+                config['device']).to(
+                torch.int64).view(
                 batch_size,
-                self.config['sequence_length'],
-                self.config['input_size'])
+                config['sequence_length'])
 
-            # if type_ == 'valid':
-            response_ = []
+            response_greedy = []
+            response_sampled = []
             context_ = []
-            target_response = []
-            response_premasked = []  # the response generated by choosing only unmasked words
-            # Generate random masks
+
             encoder_outputs = torch.zeros(
-                self.config['sequence_length'],
+                config['sequence_length'],
                 batch_size,
-                self.config['hidden_size'],
-                device=self.config['device'])
+                config['hidden_size'],
+                device=config['device'])
 
             self.optimizer.zero_grad()
             self.optimizer_dec.zero_grad()
-            for di in range(Data[i]['encoder_length']):
-                out, hidden_enc = self.Encoder(input_[:, di, :], hidden_enc)
-                context_ = context_ + \
-                    [torch.argmax(input_[:, di, :].view(batch_size, -1), dim=1).view(-1, 1)]
+            for di in range(Data[i]['encoder_length'] + 1):
+                out, hidden_enc = self.Encoder(input_[:, di], hidden_enc)
+                context_ = context_ + [input_[:, di].unsqueeze(1)]
                 encoder_outputs[di] = (
                     hidden_enc[0] + hidden_enc[1]).view(batch_size, -1)
 
             decoder_hidden = hidden_enc
 
-            decoder_input_ = decoder_input[:, 0, :]
-            dec_list = []
-            mask = torch.from_numpy(config['mask']).to(device).bool()
-
+            # Apply output dropout fpr sem loss (generate random masks)
+            mask = torch.from_numpy(self.mask).to(device).bool()
             if type_ == 'train' and config['output_dropout'] > 0:
                 weight_random = np.random.random(
-                    len(config['mask']) - 4) > config['output_dropout']
-                config['mask'] = np.hstack(
-                    [config['mask'][:4], weight_random.astype(int)])
-                mask = torch.from_numpy(config['mask']).to(device).bool()
+                    len(mask) - len(config['mask_special_indices'])) > config['output_dropout']
+                mask_numpy = np.hstack(
+                    [config['mask_special_indices'], weight_random.astype(int)])
+                mask = torch.from_numpy(mask_numpy).to(device).bool()
+                # Apply output dropout for MLE loss
                 if config['change_nll_mask']:
-                    self.criterion = nn.NLLLoss(
-                        weight=torch.from_numpy(
-                            config['mask']).float()).to(device)
+                    self.criterion = nn.NLLLoss(weight=torch.from_numpy(
+                        mask_numpy).float()).to(device)
 
-            for di in range(Data[i]['decoder_length'] - 1):
-                decoder_output, decoder_hidden, _ = self.Decoder(
-                    decoder_input_, decoder_hidden, encoder_outputs)
-
-                if np.random.rand() < self.config['teacher_forcing'] and type_ == 'train':
-                    decoder_input_ = decoder_input[:, di + 1, :]
-                else:
-                    decoder_input_ = decoder_output.view(-1, self.config['input_size'])
-
-                seq_loss_a += self.criterion(input=decoder_output[:, -1, :], target=torch.max(
-                    decoder_input[:, di + 1, :], dim=1)[-1])
-                dec_list += [decoder_output.view(-1,1, self.config['input_size'])]
-                target_response = target_response + \
-                    [torch.argmax(decoder_input[:, di, :].view(batch_size, -1), dim=1).view(-1, 1)]
-                response_ = response_ + \
-                    [torch.argmax(decoder_output.view(batch_size, -1), dim=1).view(-1, 1)]
-
-                if type_ == 'train':
-                    response_premasked = response_premasked + \
-                        [torch.argmax(decoder_output.view(batch_size, -1).masked_fill(~mask, -10**6), dim=1).view(-1, 1)]
-                else:
-                    response_premasked = response_
-            con = torch.cat(context_, dim=1)
-            res = torch.cat(response_, dim=1)
-            res_premasked = torch.cat(response_premasked, dim=1)
+            target_response = [decoder_input[:, di + 1].unsqueeze(1) for
+                               di in range(Data[i]['decoder_length'] + 1)]
             tar = torch.cat(target_response, dim=1)
+            loss = 0.
+            reinforce_loss = 0.
 
-            loss = seq_loss_a / batch_size / Data[i]['decoder_length']
-            # seq_loss_a.item()/batch_size/Data[i]['decoder_length']
-            loss_mle_inf += loss.item() / total_step
 
-            res_premasked = Posteos_mask(res_premasked, config)
-            loss_bert = Bert_loss(
-                self.Bert_embedding(res_premasked),
-                self.Bert_embedding(tar),
-                config['sentence_embedding'])
+            # Greedy decoding for mle loss
+            if config['loss'] != 'sem':
+                decoder_input_greedy = decoder_input[:, 0]
+                seq_loss_a = 0.
+                for di in range(Data[i]['decoder_length'] + 1):
+                    decoder_output, decoder_hidden, _ = self.Decoder(
+                        decoder_input_greedy, decoder_hidden, encoder_outputs)
 
-            loss_bert_inf += torch.mean(loss_bert) / total_step
+                    decoder_output = decoder_output.squeeze(1)
+                    if type_ == 'train' and config['change_nll_mask']:
+                        decoder_output = decoder_output.masked_fill(~mask, -10 ** 6)
 
-            dec = torch.cat(dec_list, dim=1)
-            # Extracting only the exact words: greedy
-            words = torch.max(dec,dim=2)[0]
-            reinforce_loss = torch.mean(-torch.matmul(loss_bert.view(1,-1),words))
-            loss_reinforce_inf += reinforce_loss.item() / total_step
+                    if type_ == 'train' and np.random.rand() < config['teacher_forcing']:
+                        decoder_input_greedy = decoder_input[:, di + 1]
+                    else:
+                        decoder_input_greedy = torch.argmax(decoder_output, dim=1)
+
+                    seq_loss_a += self.criterion(input=decoder_output, target=decoder_input[:, di + 1])
+
+                    response_greedy = response_greedy + [torch.argmax(decoder_output, dim=1).unsqueeze(1)]
+
+                loss = seq_loss_a / Data[i]['decoder_length']
+                loss_mle_inf += loss.item() / total_step
+
+
+            if config['loss'] != 'nll' and config['alpha'] != 0.:
+                # Sampling decoding for reinforce loss
+                decoder_input_sampled = decoder_input[:, 0]
+                sampled_words_logprobs = []
+                eos_reached = torch.zeros(batch_size).bool()
+                for di in range(config['sequence_length']):
+                    decoder_output, decoder_hidden, _ = self.Decoder(
+                        decoder_input_sampled, decoder_hidden, encoder_outputs)
+
+                    decoder_output = decoder_output.squeeze(1)
+                    if type_ == 'train':
+                        decoder_output = decoder_output.masked_fill(~mask, -10 ** 6)
+
+                    m = Categorical(probs=torch.exp(decoder_output))
+                    decoder_input_sampled = m.sample()
+                    decoder_input_sampled[eos_reached] = config['pad_index']
+                    eos_reached[decoder_input_sampled == config['eos_index']] = True
+
+                    sampled_words_logprobs += [decoder_output.gather(dim=1, index=decoder_input_sampled.unsqueeze(1))]
+                    response_sampled = response_sampled + \
+                                       [decoder_input_sampled.unsqueeze(1)]
+
+                    if torch.sum(eos_reached) == batch_size:
+                        break
+
+                response_sampled = torch.cat(response_sampled, dim=1)
+                loss_bert = Sem_loss(
+                    self.Sem_embedding(response_sampled),
+                    self.Sem_embedding(tar),
+                    config['sentence_embedding'])
+
+                loss_bert_inf += torch.mean(loss_bert) / total_step
+
+
+                sampled_words_logprobs = torch.cat(sampled_words_logprobs, dim=1)
+                reinforce_loss = -torch.mean(loss_bert.unsqueeze(1)
+                                              * sampled_words_logprobs
+                                              * (response_sampled != config['pad_index']))
+                loss_reinforce_inf += reinforce_loss.item() / total_step
+
+
+            con = torch.cat(context_, dim=1)
+            if config['loss'] != 'sem':
+                res = torch.cat(response_greedy, dim=1)
+            else:
+                res = response_sampled
 
             if config['loss'] == 'nll':
                 train_loss = loss
@@ -303,15 +328,6 @@ class Seq2Seq(nn.Module):
                     r_list = [Data.Vocab_inv[idx.item()]
                               for idx in res[c_index]]
                     r = ' '.join(r_list)
-                    # if '<eos>' in t_list:
-                    #     ind_tar = t_list.index('<eos>')
-                    # else:
-                    #     ind_tar = -1
-                    # if '<eos>' in r_list:
-                    #     ind_mod = r_list.index('<eos>')
-                    # else:
-                    #     ind_mod = -1
-                    # meteor_score_valid += meteor_score(' '.join(r_list[:ind_mod]),' '.join(t_list[1:ind_tar]))
                     self.sample_saver.write(
                         'Context: ' +
                         c +
@@ -352,15 +368,20 @@ class Seq2Seq(nn.Module):
 
 if __name__ == '__main__':
     logging.basicConfig(filename=logfile_name,
-                        filemode='a',
+                        filemode='a+',
+                        format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
+                        datefmt='%H:%M:%S',
                         level=logging.INFO)
 
     Model = Seq2Seq(config)
     if os.path.exists(os.path.join(saved_models, config['run_id'] + '_last')):
+        logging.info(
+            f"Resuming training of model " + os.path.join(saved_models, config['run_id'] + '_last'))
         checkpoint = torch.load(os.path.join(saved_models, config['run_id'] + '_last'))
         Model.load_state_dict(checkpoint['model_State_dict'])
         config = checkpoint['config']
         config["device"] = device
+        logging.info(str(config))
         if config["wandb_project"] is not None:
             wandb.init(project=config["wandb_project"], resume=config['run_id'], allow_val_change=True)
     else:
@@ -401,6 +422,7 @@ if __name__ == '__main__':
                                                                            ep=epoch, sample_saver=sample_saver_eval)
         if meteor_valid > config['meteor_valid']:
             config['meteor_valid'] = meteor_valid
+            config['meteor_valid_epoch'] = epoch
             if config["wandb_project"] is not None:
                 wandb.config.update({'meteor_valid':meteor_valid}, allow_val_change=True)
                 wandb.config.update({'meteor_valid_epoch': epoch}, allow_val_change=True)
@@ -412,6 +434,7 @@ if __name__ == '__main__':
                 os.path.join(wandb.run.dir, config['run_id'] + '_best_meteor'))
         if loss_mle_valid < config['best_mle_valid']:
             config['best_mle_valid'] = loss_mle_valid
+            config['best_mle_valid_epoch'] = epoch
             if config["wandb_project"] is not None:
                 wandb.config.update({'best_mle_valid':loss_mle_valid}, allow_val_change=True)
                 wandb.config.update({'best_mle_valid_epoch': epoch}, allow_val_change=True)
@@ -425,6 +448,7 @@ if __name__ == '__main__':
                 ''))
         if combined_loss_valid < config['best_combined_loss']:
             config['best_combined_loss'] = combined_loss_valid
+            config['best_combined_loss_epoch'] = epoch
             if config["wandb_project"] is not None:
                 wandb.config.update({'best_combined_loss':combined_loss_valid}, allow_val_change=True)
                 wandb.config.update({'best_combined_loss_epoch': epoch}, allow_val_change=True)

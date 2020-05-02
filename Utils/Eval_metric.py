@@ -26,7 +26,7 @@ def Metrics(file_loc, increment=4):
     cnt_ = 0
     i=0
     while i<len(D):
-        tar = D[i+2].split()[2:]
+        tar = D[i+2].split()[1:]
         mod = D[i+1].split()[1:]
 
         if '<eos>' in tar:
@@ -54,7 +54,7 @@ def meteor(file_loc, increment=4):
     cnt_ = 1e-3
     i=0
     while i<len(D):
-        tar = D[i+2].split()[2:]
+        tar = D[i+2].split()[1:]
         mod = D[i+1].split()[1:]
 
         if '<eos>' in tar:
