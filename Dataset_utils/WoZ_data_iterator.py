@@ -1,7 +1,5 @@
 #Iterator of Babi-graph dataset with torch
 from __future__ import print_function, division
-import os
-import torch
 import _pickle as cPickle
 import numpy as np
 from torch.utils.data import Dataset, DataLoader
@@ -47,12 +45,8 @@ class WoZGraphDataset(Dataset):
 
         vertices_bow = []
         edges_bow = []
-        sentences_ = []
         user_utt = []
         machine_utt = []
-        answers = []
-        decoder_mask = []
-        ind = 0
         for idx in range(start_ind*self.batch_size,min(start_ind*self.batch_size+self.batch_size,self.len_data)):
             D = self.Data[idx]
             logs = D['log']
@@ -65,8 +59,6 @@ class WoZGraphDataset(Dataset):
                     u_vertices = []
                     user_graph = logs[k]['local_graph']
                     for edge,value in user_graph.items():
-                        c_one_hot_vert = np.zeros((1,self.vlen),dtype = np.float32).sum(axis = 0)
-                        c_one_hot_edge = np.zeros((1,self.elen),dtype = np.float32).sum(axis = 0)
                         if len(value.split()):
                             vertices = [self.Vocab[value.split()[0].strip().lower()] if value.split()[0].strip().lower() in self.Vocab else 2]
                         else:
@@ -90,23 +82,26 @@ class WoZGraphDataset(Dataset):
                         edges_bow += [np.zeros((1,self.elen),dtype = np.float32).sum(axis = 0)]
                 indices = [self.Vocab[text[x].strip()] if text[x] in self.Vocab else 2 for x in range(len(text))]
                 indices = indices[-max_length:]
-                indices = [0]+indices+[1]+[3]*(max_length-len(indices))
-                one_hot_sent = np.zeros((len(indices),self.vlen),dtype = np.float32)
-                one_hot_sent[np.arange(len(indices)),indices] = 1.
-                #print(k)
+                indices = np.array([0] + indices + [1] + [3] * (max_length - len(indices)))
+                # one_hot_sent = np.zeros((len(indices),self.vlen),dtype = np.float32)
+                # one_hot_sent[np.arange(len(indices)),indices] = 1.
                 if k%2==0:
-                    user_utt +=[one_hot_sent]
+                    user_utt +=[indices]
                     if len(text) > max_encoder_len:
                         max_encoder_len = len(text)
                 else:
-                    machine_utt += [one_hot_sent]
+                    machine_utt += [indices]
                     if len(text) > max_seq_len:
                         max_seq_len = len(text)
-            #print(len(user_utt),len(machine_utt))
         if start_ind*self.batch_size < self.len_data:
-            return {'encoder_length':min(max_length,max_encoder_len),'decoder_length': min(max_length,max_seq_len),'input':np.array(user_utt), 'vertices':np.array(vertices_bow), 'edges': np.array(edges_bow), 'target': np.array(machine_utt)}
+            return {'encoder_length':min(max_length,max_encoder_len),
+                    'decoder_length': min(max_length,max_seq_len),
+                    'input':np.array(user_utt),
+                    'vertices':np.array(vertices_bow),
+                    'edges': np.array(edges_bow),
+                    'target': np.array(machine_utt)}
         else:
             raise Exception('x should be less than {}. The value of index was: {}'.format(self.len_data, start_ind))
     def getBatch(self,batch_id = 0):
-        Data = self.__getitem__(ind)
+        Data = self.__getitem__(batch_id)
         return Data
