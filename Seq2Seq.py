@@ -1,5 +1,5 @@
 from Model.RNN import EncoderRNN, AttnDecoderRNN
-from Utils.Eval_metric import meteor
+from Utils.Eval_metric import getscores
 from Utils.Bert_util import Load_embeddings, Sem_loss, Mask_sentence, Posteos_mask, create_id
 from Dataset_utils.Frames_data_iterator import FramesGraphDataset
 from Dataset_utils.WoZ_data_iterator import WoZGraphDataset
@@ -355,11 +355,11 @@ class Seq2Seq(nn.Module):
             logging.info(
                 f"Valid:   Loss_MLE_eval: {loss_mle_inf:.4f},  Loss_Bert_eval: {loss_bert_inf:.4f}, "
                 f"'meteor_score': {meteor_score_valid:.2f},"
-                f"'meteor_score': {bleu_score_valid:.2f}\n")
+                f"'bleu_score': {bleu_score_valid:.2f}\n")
             if config["wandb_project"] is not None:
                 wandb.log({'Loss_MLE_eval': loss_mle_inf, 'Loss_Bert_eval': loss_bert_inf,
                            'train_loss_eval': train_loss_inf, 'reinforce_loss_eval': loss_reinforce_inf,
-                           'meteor_score': meteor_score_valid, 'global_step':ep})
+                           'meteor_score': meteor_score_valid, 'bleu_score': bleu_score_valid, 'global_step':ep})
             return loss_mle_inf, train_loss_inf, meteor_score_valid
         if type_ == 'train':
             logging.info(
