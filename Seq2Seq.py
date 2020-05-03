@@ -348,10 +348,14 @@ class Seq2Seq(nn.Module):
         if type_ == 'eval':
             # meteor_score_valid = meteor_score_valid / cnt * 100
             self.sample_saver.close()
-            meteor_score_valid = meteor(sample_saver.name) * 100.
+            valid_scores = getscores(sample_saver.name)
+            meteor_score_valid = valid_scores['METEOR'] * 100.
+            bleu_score_valid = valid_scores['BLEU'] * 100.
+
             logging.info(
                 f"Valid:   Loss_MLE_eval: {loss_mle_inf:.4f},  Loss_Bert_eval: {loss_bert_inf:.4f}, "
-                f"'meteor_score': {meteor_score_valid:.2f}\n")
+                f"'meteor_score': {meteor_score_valid:.2f},"
+                f"'meteor_score': {bleu_score_valid:.2f}\n")
             if config["wandb_project"] is not None:
                 wandb.log({'Loss_MLE_eval': loss_mle_inf, 'Loss_Bert_eval': loss_bert_inf,
                            'train_loss_eval': train_loss_inf, 'reinforce_loss_eval': loss_reinforce_inf,

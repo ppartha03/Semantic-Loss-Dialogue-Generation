@@ -47,10 +47,11 @@ def Metrics(file_loc, increment=4):
         cnt_+=1
     return {'METEOR':meteor_s/float(cnt_),'BLEU': sent_bleu/float(cnt_),'F1': r_f1/float(cnt_), 'Recall': r_rec/float(cnt_), 'Precision': r_pre/float(cnt_)}
 
-def meteor(file_loc, increment=4):
+def getscores(file_loc, increment=4):
     fp = open(file_loc)
     D = fp.readlines()
     meteor_s = 0.0
+    sent_bleu = 0.0
     cnt_ = 1e-3
     i=0
     while i<len(D):
@@ -66,9 +67,10 @@ def meteor(file_loc, increment=4):
         else:
             ind_mod = -1
         meteor_s += meteor_score([' '.join(mod[:ind_mod])],' '.join(tar[:ind_tar]))
+        sent_bleu += bleu_met([mod[:ind_mod]],tar[:ind_tar],(0.5,0.5))
         i+=increment
         cnt_+=1
-    return meteor_s/float(cnt_)
+    return {'METEOR': meteor_s/float(cnt_), 'BLEU': sent_bleu/float(cnt_)}
 
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
