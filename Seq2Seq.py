@@ -11,6 +11,7 @@ import argparse
 import os
 import logging
 import wandb
+import random
 from torch.distributions.categorical import Categorical
 
 parser = argparse.ArgumentParser()
@@ -21,7 +22,7 @@ parser.add_argument('--dataset', type=str, default="frames", choices=["frames", 
 parser.add_argument('--loss', type=str, default='combine')
 parser.add_argument('--batch_size', type=int, default=8)
 parser.add_argument('--alpha', type=float, default=0.0)
-parser.add_argument('--toggle_loss', type=float, default=0.5)
+parser.add_argument('--toggle_loss', type=float, default=0.0)
 parser.add_argument('--teacher_forcing', type=float, default=1.0)
 parser.add_argument('--change_nll_mask', action='store_true')
 parser.add_argument('--results_path', type=str, default='.')
@@ -44,7 +45,7 @@ parser.add_argument('--wandb_project', type=str, default=None)
 # which model to use for validation/test, 'best_mle' or 'best_combined',
 # 'best_meteor'
 parser.add_argument('--validation_model', type=str, default='best_meteor',
-                    choices=["best_mle", "best_combined_loss", "best_meteor", "last"])
+                    choices=["best_mle", "best_combined_loss", "best_meteor", "best_bleu", "last"])
 parser.add_argument(
     '--embeddings',
     type=str,
@@ -54,6 +55,7 @@ config = vars(args)
 if config["wandb_project"] == 'None' or config["wandb_project"] == 'none':
     config["wandb_project"] = None
 config["run_id"] = "exp_" + str(args.exp_id) + "_seed_" + str(args.seed)
+config["wandb_id"] = str(random.randint(1e7, 1e8))
 sys.path.append(args.data_path)
 
 result_path = os.path.join(args.results_path, "Results", args.dataset, config["run_id"])
@@ -104,8 +106,10 @@ config['best_mle_valid'] = 10000
 config['best_mle_valid_epoch'] = 0
 config['best_combined_loss'] = 10000
 config['best_combined_loss_epoch'] = 0
-config['meteor_valid'] = 0
-config['meteor_valid_epoch'] = 0
+config['best_meteor'] = 0
+config['best_meteor_epoch'] = 0
+config['best_bleu'] = 0
+config['best_bleu_epoch'] = 0
 
 # Create model id
 config['mask_special_indices'] = np.array([0, 1, 1, 0])
@@ -360,7 +364,7 @@ class Seq2Seq(nn.Module):
                 wandb.log({'Loss_MLE_eval': loss_mle_inf, 'Loss_Bert_eval': loss_bert_inf,
                            'train_loss_eval': train_loss_inf, 'reinforce_loss_eval': loss_reinforce_inf,
                            'meteor_score': meteor_score_valid, 'bleu_score': bleu_score_valid, 'global_step':ep})
-            return loss_mle_inf, train_loss_inf, meteor_score_valid
+            return loss_mle_inf, train_loss_inf, meteor_score_valid, bleu_score_valid
         if type_ == 'train':
             logging.info(
                 f"Train:   Loss_MLE_train: {loss_mle_inf:.4f},  Loss_Bert_train: {loss_bert_inf:.4f}\n")
@@ -387,12 +391,12 @@ if __name__ == '__main__':
         config["device"] = device
         logging.info(str(config))
         if config["wandb_project"] is not None:
-            wandb.init(project=config["wandb_project"], resume=config['run_id'], allow_val_change=True)
+            wandb.init(project=config["wandb_project"], resume=config["wandb_id"], allow_val_change=True)
     else:
         torch.save({'model_State_dict': Model.state_dict(), 'config': config},
                    os.path.join(saved_models, config['run_id'] + '_last'))
         if config["wandb_project"] is not None:
-            wandb.init(project=config["wandb_project"], name=config['run_id'], id=config['run_id'], allow_val_change=True)
+            wandb.init(project=config["wandb_project"], name=config['run_id'], id=config["wandb_id"], allow_val_change=True)
 
     # Train
     Data_train.setBatchSize(config['batch_size'])
@@ -402,8 +406,8 @@ if __name__ == '__main__':
     logging.info(f"using {config['device']}\n")
 
     Data_valid.setBatchSize(config['batch_size'])
-    for epoch in range(config['epoch'], config['num_epochs']):
-        logging.info(str(epoch) + '/' + str(config['num_epochs']))
+    for epoch in range(config['epoch'], args.num_epochs):
+        logging.info(str(epoch) + '/' + str(args.num_epochs))
         Model.modelrun(Data=Data_train, type_='train', total_step=Data_train.num_batches, ep=epoch)
         config['epoch'] += 1
         if config["wandb_project"] is not None:
@@ -421,15 +425,30 @@ if __name__ == '__main__':
             str(epoch) +
             '.txt'),
             'a+')
-        loss_mle_valid, combined_loss_valid, meteor_valid = Model.modelrun(Data=Data_valid, type_='eval',
-                                                                           total_step=Data_valid.num_batches,
-                                                                           ep=epoch, sample_saver=sample_saver_eval)
-        if meteor_valid > config['meteor_valid']:
-            config['meteor_valid'] = meteor_valid
-            config['meteor_valid_epoch'] = epoch
+
+        loss_mle_valid, combined_loss_valid, meteor_valid, bleu_valid= \
+            Model.modelrun(Data=Data_valid, type_='eval', total_step=Data_valid.num_batches,
+                           ep=epoch, sample_saver=sample_saver_eval)
+
+
+        if bleu_valid > config['best_bleu']:
+            config['best_bleu'] = bleu_valid
+            config['best_bleu_epoch'] = epoch
             if config["wandb_project"] is not None:
-                wandb.config.update({'meteor_valid':meteor_valid}, allow_val_change=True)
-                wandb.config.update({'meteor_valid_epoch': epoch}, allow_val_change=True)
+                wandb.config.update({'best_bleu':bleu_valid}, allow_val_change=True)
+                wandb.config.update({'best_bleu_epoch': epoch}, allow_val_change=True)
+            torch.save({'model_State_dict': Model.state_dict(), 'config': config},
+                       os.path.join(saved_models, config['run_id'] + '_best_bleu'))
+            # save the best model to wandb
+            if config["wandb_project"] is not None:
+                torch.save({'model_State_dict': Model.state_dict(), 'config': config},
+                os.path.join(wandb.run.dir, config['run_id'] + '_best_bleu'))
+        if meteor_valid > config['best_meteor']:
+            config['best_meteor'] = meteor_valid
+            config['best_meteor_epoch'] = epoch
+            if config["wandb_project"] is not None:
+                wandb.config.update({'best_meteor':meteor_valid}, allow_val_change=True)
+                wandb.config.update({'best_meteor_epoch': epoch}, allow_val_change=True)
             torch.save({'model_State_dict': Model.state_dict(), 'config': config},
                        os.path.join(saved_models, config['run_id'] + '_best_meteor'))
             # save the best model to wandb
@@ -471,7 +490,7 @@ if __name__ == '__main__':
     checkpoint = torch.load(
         os.path.join(
             saved_models,
-            config['run_id'] +
+            config['run_id'] + '_' +
             args.validation_model))
 
     Model.load_state_dict(checkpoint['model_State_dict'])
