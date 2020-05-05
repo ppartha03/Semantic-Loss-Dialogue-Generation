@@ -30,6 +30,7 @@ parser.add_argument('--decoder_learning_rate', type=float, default=0.004)
 parser.add_argument('--output_dropout', type=float, default=0.0)
 parser.add_argument('--data_path', type=str, default="./Dataset")
 parser.add_argument('--save_every_epoch', action='store_true')
+parser.add_argument('--no_baseline', action='store_true')
 parser.add_argument('--exp_id', type=int, default=0)
 parser.add_argument('--num_epochs', type=int, default=100)
 parser.add_argument('--seed', type=int, default=100)
@@ -158,6 +159,7 @@ class Seq2Seq(nn.Module):
         loss_mle_inf = 0.
         loss_bert_inf = 0.
         loss_reinforce_inf = 0.
+        reinforce_baseline = []
         train_loss_inf = 0.
         config = self.config
 
@@ -288,12 +290,15 @@ class Seq2Seq(nn.Module):
                     config['sentence_embedding'])
 
                 loss_bert_inf += torch.mean(loss_bert) / total_step
-
+                baseline = 0.
+                if i > 0 and config['no_baseline'] == False:
+                    baseline = sum(reinforce_baseline)/i+1
 
                 sampled_words_logprobs = torch.cat(sampled_words_logprobs, dim=1)
-                reinforce_loss = -torch.mean(loss_bert.unsqueeze(1)
-                                              * sampled_words_logprobs
-                                              * (response_sampled != config['pad_index']))
+                reinforce_loss = -torch.sum((loss_bert-baseline).unsqueeze(1) * sampled_words_logprobs
+                            * (response_sampled != config['pad_index'])) \
+                 / torch.sum(response_sampled != config['pad_index'])
+                reinforce_baseline += [reinforce_loss.item()]
                 loss_reinforce_inf += reinforce_loss.item() / total_step
 
 
