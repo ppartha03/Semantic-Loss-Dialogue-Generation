@@ -102,11 +102,11 @@ def Sem_loss(output_embeddings, target_embeddings, sentence_embedding):
     else:
         output_sen_embedding = torch.mean(output_embeddings, dim=1)
         target_sen_embedding = torch.mean(target_embeddings, dim=1)
-    
+
     #mse_loss = F.mse_loss(output_sen_embedding, target_sen_embedding.requires_grad_(False))
     mse_loss = torch.mean((output_sen_embedding - target_sen_embedding)**2,dim=1)
     #mse_loss = torch.mean(mse_loss,dim = 1)
-    return mse_loss
+    return -mse_loss
 
 
 def Mask_sentence(res, mask, config):
