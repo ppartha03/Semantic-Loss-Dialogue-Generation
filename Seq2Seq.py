@@ -292,8 +292,8 @@ class Seq2Seq(nn.Module):
                 loss_bert_inf += torch.mean(loss_bert) / total_step
                 baseline = 0.
                 if i > 0 and config['no_baseline'] == False:
-                    baseline = sum(reinforce_baseline)/i+1
-
+                    baseline = sum(reinforce_baseline)/(i+1)
+                print(baseline)
                 sampled_words_logprobs = torch.cat(sampled_words_logprobs, dim=1)
                 reinforce_loss = -torch.sum((loss_bert-baseline).unsqueeze(1) * sampled_words_logprobs
                             * (response_sampled != config['pad_index'])) \
