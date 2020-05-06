@@ -428,9 +428,9 @@ if __name__ == '__main__':
             config['run_id'] + '_' +
             str(epoch) +
             '.txt'),
-            'a+')
+            'w')
 
-        loss_mle_valid, combined_loss_valid, meteor_valid, bleu_valid= \
+        loss_mle_valid, combined_loss_valid, meteor_valid, bleu_valid = \
             Model.modelrun(Data=Data_valid, type_='eval', total_step=Data_valid.num_batches,
                            ep=epoch, sample_saver=sample_saver_eval)
 
@@ -505,9 +505,13 @@ if __name__ == '__main__':
         config['run_id'] + '_' +
         args.validation_model +
         '.txt'),
-        'a+')
-    Model.modelrun(Data=Data_valid, type_='eval', total_step=Data_valid.num_batches, ep=0,
-                   sample_saver=sample_saver_valid)
+        'w')
+    loss_mle_valid, combined_loss_valid, meteor_valid, bleu_valid = \
+        Model.modelrun(Data=Data_valid, type_='eval', total_step=Data_valid.num_batches, ep=0,
+                       sample_saver=sample_saver_valid)
+    logging.info(f"{args.validation_model} model validation results:   Loss_MLE_eval: {loss_mle_valid:.4f}, "
+                 f"Loss_Bert_eval: {combined_loss_valid:.4f}, 'meteor_score': {meteor_valid:.2f}, "
+                 f"'bleu_score': {bleu_valid:.2f}\n")
 
     sample_saver_test = open(os.path.join(
         samples_path,
@@ -515,6 +519,10 @@ if __name__ == '__main__':
         config['run_id'] + '_' +
         args.validation_model +
         '.txt'),
-        'a+')
-    Model.modelrun(Data=Data_test, type_='eval', total_step=Data_test.num_batches, ep=0,
-                   sample_saver=sample_saver_test)
+        'w')
+    loss_mle_test, combined_loss_test, meteor_test, bleu_test = \
+        Model.modelrun(Data=Data_test, type_='eval', total_step=Data_test.num_batches, ep=0,
+                       sample_saver=sample_saver_test)
+    logging.info(f"{args.validation_model} model test results:   Loss_MLE_eval: {loss_mle_test:.4f}, "
+                 f"Loss_Bert_eval: {combined_loss_test:.4f}, 'meteor_score': {meteor_test:.2f}, "
+                 f"'bleu_score': {bleu_test:.2f}\n")
