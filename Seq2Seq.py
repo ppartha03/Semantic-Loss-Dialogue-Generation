@@ -1,6 +1,6 @@
 from Model.RNN import EncoderRNN, AttnDecoderRNN
 from Utils.Eval_metric import getscores
-from Utils.Bert_util import Load_embeddings, Sem_loss, Mask_sentence, Posteos_mask, create_id
+from Utils.Bert_util import Load_embeddings, Sem_reward, Mask_sentence, Posteos_mask, create_id
 from Dataset_utils.Frames_data_iterator import FramesGraphDataset
 from Dataset_utils.WoZ_data_iterator import WoZGraphDataset
 import sys
@@ -31,16 +31,14 @@ parser.add_argument('--decoder_learning_rate', type=float, default=0.004)
 parser.add_argument('--output_dropout', type=float, default=0.0)
 parser.add_argument('--data_path', type=str, default="./Dataset")
 parser.add_argument('--save_every_epoch', action='store_true')
-parser.add_argument('--no_baseline', action='store_true')
+parser.add_argument('--reward_baseline_n_steps', type=int, default=20,
+                    help="Number of steps taken in calculating the running average of the reward as baseline, "
+                         "use 0 for no reward baseline")
 parser.add_argument('--exp_id', type=int, default=0)
 parser.add_argument('--num_epochs', type=int, default=100)
 parser.add_argument('--seed', type=int, default=100)
-# calculate sentence embedding using "mean" or "sum" of bert embeddings
+# calculate sentence embedding using "mean" or "sum" of word embeddings
 parser.add_argument('--sentence_embedding', type=str, default='mean')
-# if true, don't apply the mask before generating the Bert sentence (allow
-# the model to generate masked tokens, and then mask them during the
-# embedding calculation)
-parser.add_argument('--no_prebert_mask', action='store_true')
 #Use None for not logging using wandb
 parser.add_argument('--wandb_project', type=str, default=None)
 # which model to use for validation/test, 'best_mle' or 'best_combined',
@@ -53,6 +51,7 @@ parser.add_argument(
     default='bert')  # glove, word2vec, bert
 args = parser.parse_args()
 config = vars(args)
+config["last_n_rewards"] = []
 if config["wandb_project"] == 'None' or config["wandb_project"] == 'none':
     config["wandb_project"] = None
 config["run_id"] = "exp_" + str(args.exp_id) + "_seed_" + str(args.seed)
@@ -161,9 +160,8 @@ class Seq2Seq(nn.Module):
 
     def modelrun(self, Data, type_='train', total_step=200, ep=0, sample_saver=None):
         loss_mle_inf = 0.
-        loss_bert_inf = 0.
+        sem_reward_inf = 0.
         loss_reinforce_inf = 0.
-        reinforce_baseline = []
         train_loss_inf = 0.
         config = self.config
 
@@ -288,20 +286,22 @@ class Seq2Seq(nn.Module):
                         break
 
                 response_sampled = torch.cat(response_sampled, dim=1)
-                loss_bert = Sem_loss(
+                sem_reward = Sem_reward(
                     self.Sem_embedding(response_sampled),
                     self.Sem_embedding(tar),
                     config['sentence_embedding'])
 
-                loss_bert_inf += torch.mean(loss_bert) / total_step
+                sem_reward_inf += torch.mean(sem_reward) / total_step
                 baseline = 0.
-                if i > 0 and config['no_baseline'] == False:
-                    baseline = sum(reinforce_baseline)/(i+1)
+                if config["reward_baseline_n_steps"] > 0:
+                    config["last_n_rewards"] += [torch.mean(sem_reward).item()]
+                    config["last_n_rewards"] = config["last_n_rewards"][-config["reward_baseline_n_steps"]:]
+                    baseline = sum(config["last_n_rewards"]) / len(config["last_n_rewards"])
                 sampled_words_logprobs = torch.cat(sampled_words_logprobs, dim=1)
-                reinforce_loss = -torch.sum((loss_bert-baseline).unsqueeze(1) * sampled_words_logprobs
-                            * (response_sampled != config['pad_index'])) \
-                 / torch.sum(response_sampled != config['pad_index'])
-                reinforce_baseline += [reinforce_loss.item()]
+                reinforce_loss = -torch.sum((sem_reward-baseline).unsqueeze(1)
+                                            * sampled_words_logprobs
+                                            * (response_sampled != config['pad_index'])) \
+                                 / torch.sum(response_sampled != config['pad_index'])
                 loss_reinforce_inf += reinforce_loss.item() / total_step
 
 
@@ -361,19 +361,19 @@ class Seq2Seq(nn.Module):
             bleu_score_valid = valid_scores['BLEU'] * 100.
 
             logging.info(
-                f"Valid:   Loss_MLE_eval: {loss_mle_inf:.4f},  Loss_Bert_eval: {loss_bert_inf:.4f}, "
+                f"Valid:   Loss_MLE_eval: {loss_mle_inf:.4f},  Sem_reward_eval: {sem_reward_inf:.4f}, "
                 f"'meteor_score': {meteor_score_valid:.2f},"
                 f"'bleu_score': {bleu_score_valid:.2f}\n")
             if config["wandb_project"] is not None:
-                wandb.log({'Loss_MLE_eval': loss_mle_inf, 'Loss_Bert_eval': loss_bert_inf,
+                wandb.log({'Loss_MLE_eval': loss_mle_inf, 'Sem_reward_eval': sem_reward_inf,
                            'train_loss_eval': train_loss_inf, 'reinforce_loss_eval': loss_reinforce_inf,
                            'meteor_score': meteor_score_valid, 'bleu_score': bleu_score_valid, 'global_step':ep})
             return loss_mle_inf, train_loss_inf, meteor_score_valid, bleu_score_valid
         if type_ == 'train':
             logging.info(
-                f"Train:   Loss_MLE_train: {loss_mle_inf:.4f},  Loss_Bert_train: {loss_bert_inf:.4f}\n")
+                f"Train:   Loss_MLE_train: {loss_mle_inf:.4f},  Sem_reward_train: {sem_reward_inf:.4f}\n")
             if config["wandb_project"] is not None:
-                wandb.log({'Loss_MLE_train': loss_mle_inf, 'Loss_Bert_train': loss_bert_inf,
+                wandb.log({'Loss_MLE_train': loss_mle_inf, 'Sem_reward_train': sem_reward_inf,
                            'train_loss_train': train_loss_inf, 'reinforce_loss_train': loss_reinforce_inf,
                            'global_step':ep})
 
@@ -510,7 +510,7 @@ if __name__ == '__main__':
         Model.modelrun(Data=Data_valid, type_='eval', total_step=Data_valid.num_batches, ep=0,
                        sample_saver=sample_saver_valid)
     logging.info(f"{args.validation_model} model validation results:   Loss_MLE_eval: {loss_mle_valid:.4f}, "
-                 f"Loss_Bert_eval: {combined_loss_valid:.4f}, 'meteor_score': {meteor_valid:.2f}, "
+                 f"Sem_reward_eval: {combined_loss_valid:.4f}, 'meteor_score': {meteor_valid:.2f}, "
                  f"'bleu_score': {bleu_valid:.2f}\n")
 
     sample_saver_test = open(os.path.join(
@@ -524,5 +524,5 @@ if __name__ == '__main__':
         Model.modelrun(Data=Data_test, type_='eval', total_step=Data_test.num_batches, ep=0,
                        sample_saver=sample_saver_test)
     logging.info(f"{args.validation_model} model test results:   Loss_MLE_eval: {loss_mle_test:.4f}, "
-                 f"Loss_Bert_eval: {combined_loss_test:.4f}, 'meteor_score': {meteor_test:.2f}, "
+                 f"Sem_reward_eval: {combined_loss_test:.4f}, 'meteor_score': {meteor_test:.2f}, "
                  f"'bleu_score': {bleu_test:.2f}\n")
