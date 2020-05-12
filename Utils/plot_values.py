@@ -42,8 +42,8 @@ def createData(dataset): # alpha->exp mapping {1:'1E-1',2:'1E-3'}
                         writer.writerow(dict([
                         ('alpha',v),
                         ('epoch',str(ep_t)),
-                        ('NLL Train',str(ep_t)),
-                        ('BERT Train',str(ep_t))])
+                        ('NLL Train',line[-2].split()[-1]),
+                        ('BERT Train',line[-1].split()[-1])])
                         )
                         ep_t+=1
     target.close()
