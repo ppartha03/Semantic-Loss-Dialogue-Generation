@@ -1,6 +1,6 @@
 from Model.RNN import EncoderRNN, AttnDecoderRNN
 from Utils.Eval_metric import getscores
-from Utils.Bert_util import Load_embeddings, Sem_loss, Mask_sentence, Posteos_mask, create_id
+from Utils.Bert_util import Load_embeddings, Sem_reward, Mask_sentence, Posteos_mask, create_id
 from Dataset_utils.Frames_data_iterator import FramesGraphDataset
 from Dataset_utils.WoZ_data_iterator import WoZGraphDataset
 import sys
@@ -11,6 +11,7 @@ import argparse
 import os
 import logging
 import wandb
+import random
 from torch.distributions.categorical import Categorical
 
 parser = argparse.ArgumentParser()
@@ -21,7 +22,7 @@ parser.add_argument('--dataset', type=str, default="frames", choices=["frames", 
 parser.add_argument('--loss', type=str, default='combine')
 parser.add_argument('--batch_size', type=int, default=8)
 parser.add_argument('--alpha', type=float, default=0.0)
-parser.add_argument('--toggle_loss', type=float, default=0.5)
+parser.add_argument('--toggle_loss', type=float, default=0.0)
 parser.add_argument('--teacher_forcing', type=float, default=1.0)
 parser.add_argument('--change_nll_mask', action='store_true')
 parser.add_argument('--results_path', type=str, default='.')
@@ -30,31 +31,31 @@ parser.add_argument('--decoder_learning_rate', type=float, default=0.004)
 parser.add_argument('--output_dropout', type=float, default=0.0)
 parser.add_argument('--data_path', type=str, default="./Dataset")
 parser.add_argument('--save_every_epoch', action='store_true')
-parser.add_argument('--no_baseline', action='store_true')
+parser.add_argument('--reward_baseline_n_steps', type=int, default=20,
+                    help="Number of steps taken in calculating the running average of the reward as baseline, "
+                         "use 0 for no reward baseline")
 parser.add_argument('--exp_id', type=int, default=0)
 parser.add_argument('--num_epochs', type=int, default=100)
 parser.add_argument('--seed', type=int, default=100)
-# calculate sentence embedding using "mean" or "sum" of bert embeddings
+# calculate sentence embedding using "mean" or "sum" of word embeddings
 parser.add_argument('--sentence_embedding', type=str, default='mean')
-# if true, don't apply the mask before generating the Bert sentence (allow
-# the model to generate masked tokens, and then mask them during the
-# embedding calculation)
-parser.add_argument('--no_prebert_mask', action='store_true')
 #Use None for not logging using wandb
 parser.add_argument('--wandb_project', type=str, default=None)
 # which model to use for validation/test, 'best_mle' or 'best_combined',
 # 'best_meteor'
 parser.add_argument('--validation_model', type=str, default='best_meteor',
-                    choices=["best_mle", "best_combined_loss", "best_meteor", "last"])
+                    choices=["best_mle", "best_combined_loss", "best_meteor", "best_bleu", "last"])
 parser.add_argument(
     '--embeddings',
     type=str,
     default='bert')  # glove, word2vec, bert
 args = parser.parse_args()
 config = vars(args)
+config["last_n_rewards"] = []
 if config["wandb_project"] == 'None' or config["wandb_project"] == 'none':
     config["wandb_project"] = None
 config["run_id"] = "exp_" + str(args.exp_id) + "_seed_" + str(args.seed)
+config["wandb_id"] = str(random.randint(1e7, 1e8))
 sys.path.append(args.data_path)
 
 result_path = os.path.join(args.results_path, "Results", args.dataset, config["run_id"])
@@ -105,8 +106,10 @@ config['best_mle_valid'] = 10000
 config['best_mle_valid_epoch'] = 0
 config['best_combined_loss'] = 10000
 config['best_combined_loss_epoch'] = 0
-config['meteor_valid'] = 0
-config['meteor_valid_epoch'] = 0
+config['best_meteor'] = 0
+config['best_meteor_epoch'] = 0
+config['best_bleu'] = 0
+config['best_bleu_epoch'] = 0
 
 # Create model id
 config['mask_special_indices'] = np.array([0, 1, 1, 0])
@@ -157,9 +160,8 @@ class Seq2Seq(nn.Module):
 
     def modelrun(self, Data, type_='train', total_step=200, ep=0, sample_saver=None):
         loss_mle_inf = 0.
-        loss_bert_inf = 0.
+        sem_reward_inf = 0.
         loss_reinforce_inf = 0.
-        reinforce_baseline = []
         train_loss_inf = 0.
         config = self.config
 
@@ -284,21 +286,22 @@ class Seq2Seq(nn.Module):
                         break
 
                 response_sampled = torch.cat(response_sampled, dim=1)
-                loss_bert = Sem_loss(
+                sem_reward = Sem_reward(
                     self.Sem_embedding(response_sampled),
                     self.Sem_embedding(tar),
                     config['sentence_embedding'])
 
-                loss_bert_inf += torch.mean(loss_bert) / total_step
+                sem_reward_inf += torch.mean(sem_reward) / total_step
                 baseline = 0.
-                if i > 0 and config['no_baseline'] == False:
-                    baseline = sum(reinforce_baseline)/i+1
-
+                if config["reward_baseline_n_steps"] > 0:
+                    config["last_n_rewards"] += [torch.mean(sem_reward).item()]
+                    config["last_n_rewards"] = config["last_n_rewards"][-config["reward_baseline_n_steps"]:]
+                    baseline = sum(config["last_n_rewards"]) / len(config["last_n_rewards"])
                 sampled_words_logprobs = torch.cat(sampled_words_logprobs, dim=1)
-                reinforce_loss = -torch.sum((loss_bert-baseline).unsqueeze(1) * sampled_words_logprobs
-                            * (response_sampled != config['pad_index'])) \
-                 / torch.sum(response_sampled != config['pad_index'])
-                reinforce_baseline += [reinforce_loss.item()]
+                reinforce_loss = -torch.sum((sem_reward-baseline).unsqueeze(1)
+                                            * sampled_words_logprobs
+                                            * (response_sampled != config['pad_index'])) \
+                                 / torch.sum(response_sampled != config['pad_index'])
                 loss_reinforce_inf += reinforce_loss.item() / total_step
 
 
@@ -358,19 +361,19 @@ class Seq2Seq(nn.Module):
             bleu_score_valid = valid_scores['BLEU'] * 100.
 
             logging.info(
-                f"Valid:   Loss_MLE_eval: {loss_mle_inf:.4f},  Loss_Bert_eval: {loss_bert_inf:.4f}, "
+                f"Valid:   Loss_MLE_eval: {loss_mle_inf:.4f},  Sem_reward_eval: {sem_reward_inf:.4f}, "
                 f"'meteor_score': {meteor_score_valid:.2f},"
                 f"'bleu_score': {bleu_score_valid:.2f}\n")
             if config["wandb_project"] is not None:
-                wandb.log({'Loss_MLE_eval': loss_mle_inf, 'Loss_Bert_eval': loss_bert_inf,
+                wandb.log({'Loss_MLE_eval': loss_mle_inf, 'Sem_reward_eval': sem_reward_inf,
                            'train_loss_eval': train_loss_inf, 'reinforce_loss_eval': loss_reinforce_inf,
                            'meteor_score': meteor_score_valid, 'bleu_score': bleu_score_valid, 'global_step':ep})
-            return loss_mle_inf, train_loss_inf, meteor_score_valid
+            return loss_mle_inf, train_loss_inf, meteor_score_valid, bleu_score_valid
         if type_ == 'train':
             logging.info(
-                f"Train:   Loss_MLE_train: {loss_mle_inf:.4f},  Loss_Bert_train: {loss_bert_inf:.4f}\n")
+                f"Train:   Loss_MLE_train: {loss_mle_inf:.4f},  Sem_reward_train: {sem_reward_inf:.4f}\n")
             if config["wandb_project"] is not None:
-                wandb.log({'Loss_MLE_train': loss_mle_inf, 'Loss_Bert_train': loss_bert_inf,
+                wandb.log({'Loss_MLE_train': loss_mle_inf, 'Sem_reward_train': sem_reward_inf,
                            'train_loss_train': train_loss_inf, 'reinforce_loss_train': loss_reinforce_inf,
                            'global_step':ep})
 
@@ -392,12 +395,12 @@ if __name__ == '__main__':
         config["device"] = device
         logging.info(str(config))
         if config["wandb_project"] is not None:
-            wandb.init(project=config["wandb_project"], resume=config['run_id'], allow_val_change=True)
+            wandb.init(project=config["wandb_project"], resume=config["wandb_id"], allow_val_change=True)
     else:
         torch.save({'model_State_dict': Model.state_dict(), 'config': config},
                    os.path.join(saved_models, config['run_id'] + '_last'))
         if config["wandb_project"] is not None:
-            wandb.init(project=config["wandb_project"], name=config['run_id'], id=config['run_id'], allow_val_change=True)
+            wandb.init(project=config["wandb_project"], name=config['run_id'], id=config["wandb_id"], allow_val_change=True)
 
     # Train
     Data_train.setBatchSize(config['batch_size'])
@@ -407,8 +410,8 @@ if __name__ == '__main__':
     logging.info(f"using {config['device']}\n")
 
     Data_valid.setBatchSize(config['batch_size'])
-    for epoch in range(config['epoch'], config['num_epochs']):
-        logging.info(str(epoch) + '/' + str(config['num_epochs']))
+    for epoch in range(config['epoch'], args.num_epochs):
+        logging.info(str(epoch) + '/' + str(args.num_epochs))
         Model.modelrun(Data=Data_train, type_='train', total_step=Data_train.num_batches, ep=epoch)
         config['epoch'] += 1
         if config["wandb_project"] is not None:
@@ -425,16 +428,31 @@ if __name__ == '__main__':
             config['run_id'] + '_' +
             str(epoch) +
             '.txt'),
-            'a+')
-        loss_mle_valid, combined_loss_valid, meteor_valid = Model.modelrun(Data=Data_valid, type_='eval',
-                                                                           total_step=Data_valid.num_batches,
-                                                                           ep=epoch, sample_saver=sample_saver_eval)
-        if meteor_valid > config['meteor_valid']:
-            config['meteor_valid'] = meteor_valid
-            config['meteor_valid_epoch'] = epoch
+            'w')
+
+        loss_mle_valid, combined_loss_valid, meteor_valid, bleu_valid = \
+            Model.modelrun(Data=Data_valid, type_='eval', total_step=Data_valid.num_batches,
+                           ep=epoch, sample_saver=sample_saver_eval)
+
+
+        if bleu_valid > config['best_bleu']:
+            config['best_bleu'] = bleu_valid
+            config['best_bleu_epoch'] = epoch
             if config["wandb_project"] is not None:
-                wandb.config.update({'meteor_valid':meteor_valid}, allow_val_change=True)
-                wandb.config.update({'meteor_valid_epoch': epoch}, allow_val_change=True)
+                wandb.config.update({'best_bleu':bleu_valid}, allow_val_change=True)
+                wandb.config.update({'best_bleu_epoch': epoch}, allow_val_change=True)
+            torch.save({'model_State_dict': Model.state_dict(), 'config': config},
+                       os.path.join(saved_models, config['run_id'] + '_best_bleu'))
+            # save the best model to wandb
+            if config["wandb_project"] is not None:
+                torch.save({'model_State_dict': Model.state_dict(), 'config': config},
+                os.path.join(wandb.run.dir, config['run_id'] + '_best_bleu'))
+        if meteor_valid > config['best_meteor']:
+            config['best_meteor'] = meteor_valid
+            config['best_meteor_epoch'] = epoch
+            if config["wandb_project"] is not None:
+                wandb.config.update({'best_meteor':meteor_valid}, allow_val_change=True)
+                wandb.config.update({'best_meteor_epoch': epoch}, allow_val_change=True)
             torch.save({'model_State_dict': Model.state_dict(), 'config': config},
                        os.path.join(saved_models, config['run_id'] + '_best_meteor'))
             # save the best model to wandb
@@ -476,7 +494,7 @@ if __name__ == '__main__':
     checkpoint = torch.load(
         os.path.join(
             saved_models,
-            config['run_id'] +
+            config['run_id'] + '_' +
             args.validation_model))
 
     Model.load_state_dict(checkpoint['model_State_dict'])
@@ -487,9 +505,13 @@ if __name__ == '__main__':
         config['run_id'] + '_' +
         args.validation_model +
         '.txt'),
-        'a+')
-    Model.modelrun(Data=Data_valid, type_='eval', total_step=Data_valid.num_batches, ep=0,
-                   sample_saver=sample_saver_valid)
+        'w')
+    loss_mle_valid, combined_loss_valid, meteor_valid, bleu_valid = \
+        Model.modelrun(Data=Data_valid, type_='eval', total_step=Data_valid.num_batches, ep=0,
+                       sample_saver=sample_saver_valid)
+    logging.info(f"{args.validation_model} model validation results:   Loss_MLE_eval: {loss_mle_valid:.4f}, "
+                 f"Sem_reward_eval: {combined_loss_valid:.4f}, 'meteor_score': {meteor_valid:.2f}, "
+                 f"'bleu_score': {bleu_valid:.2f}\n")
 
     sample_saver_test = open(os.path.join(
         samples_path,
@@ -497,6 +519,10 @@ if __name__ == '__main__':
         config['run_id'] + '_' +
         args.validation_model +
         '.txt'),
-        'a+')
-    Model.modelrun(Data=Data_test, type_='eval', total_step=Data_test.num_batches, ep=0,
-                   sample_saver=sample_saver_test)
+        'w')
+    loss_mle_test, combined_loss_test, meteor_test, bleu_test = \
+        Model.modelrun(Data=Data_test, type_='eval', total_step=Data_test.num_batches, ep=0,
+                       sample_saver=sample_saver_test)
+    logging.info(f"{args.validation_model} model test results:   Loss_MLE_eval: {loss_mle_test:.4f}, "
+                 f"Sem_reward_eval: {combined_loss_test:.4f}, 'meteor_score': {meteor_test:.2f}, "
+                 f"'bleu_score': {bleu_test:.2f}\n")
