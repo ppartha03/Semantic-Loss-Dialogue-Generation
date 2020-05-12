@@ -268,8 +268,9 @@ class Seq2Seq(nn.Module):
                 for di in range(config['sequence_length']):
                     decoder_output, decoder_hidden, _ = self.Decoder(
                         decoder_input_sampled, decoder_hidden, encoder_outputs)
-
+                    
                     decoder_output = decoder_output.squeeze(1)
+                    print(decoder_output)
                     if type_ == 'train':
                         decoder_output = decoder_output.masked_fill(~mask, -10 ** 6)
 
