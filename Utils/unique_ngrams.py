@@ -38,7 +38,7 @@ def getNgrams(file,n=1):
 
 def distinctNgrams(dataset): # alpha->exp mapping {1:'1E-1',2:'1E-3'}
     mapdict = {20:'Baseline', 21: '1E-3', 22: '1E-2',23: '1E-1', 24: '1E0', 25:'1E1'}#{2:'Baseline', 1:'1E-3',4:'1E0'}#{2:'Baseline', 1: '1E-3', 0: '1E-2',3: '1E-1', 4: '1E0', 5:'1E1', 6:'1E2'}
-    seeds = [100,101,103,104]
+    seeds = [100,101,102,103,104]
     fieldnames=['alpha','epoch','% unigram','% bigram']
     target = open("ngrams_valid.csv", "w")
     writer = csv.DictWriter(target, fieldnames=fieldnames)
