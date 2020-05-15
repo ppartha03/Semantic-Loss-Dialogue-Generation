@@ -5,6 +5,7 @@ import csv
 import os
 import argparse
 import matplotlib.pyplot as plt
+import _pickle as pickle
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', default = 'Frames')
@@ -62,11 +63,12 @@ def extractStats(dataset):
         folder = '../Dataset/MULTIWOZ2/'
     ngrams = {}
     D = pickle.load(open(os.path.join(folder,'Dataset_train_'+dataset+'.pkl'),'rb'))
-    ngrams = extractNgramsFromData(D, ngrams, type_=c, n=2, person = 'agent')
+    ngrams = extractNgramsFromData(D, ngrams, type_='train', n=2, person = 'agent')
     mapdict = {20:'Baseline', 23: 'BERT', 30: 'fastText',31: 'GloVe'}#{2:'Baseline', 1:'1E-3',4:'1E0'}#{2:'Baseline', 1: '1E-3', 0: '1E-2',3: '1E-1', 4: '1E0', 5:'1E1', 6:'1E2'}
     seeds = [101,102,103]
     fieldnames=['alpha','epoch','word repeats','% unseen']
     target = open("quality_analysis_"+dataset+"_valid.csv", "w")
+    writer = csv.DictWriter(target, fieldnames=fieldnames)
     writer.writerow(dict(zip(fieldnames, fieldnames)))
     for k,v in mapdict.items():
         print('Now gathering info from ',v)
