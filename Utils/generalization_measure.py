@@ -99,4 +99,4 @@ def createGraph(yrange=[5,20], filename = 'ngrams_valid.csv', graphparam = '% un
 if __name__ == '__main__':
     if not os.path.exists("quality_analysis_"+args.dataset+"_valid.csv"):
         extractStats(args.dataset)
-    createGraph(graphparam = args.graphparam)
+    createGraph(filename = "quality_analysis_"+args.dataset+"_valid.csv", graphparam = args.graphparam)
