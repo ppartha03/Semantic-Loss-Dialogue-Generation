@@ -104,8 +104,12 @@ if __name__ == '__main__':
 
             words_embeddings = Model.Decoder.embedding.weight.data.to(device)
             sampled_words_embeddings = words_embeddings[sampled_words_indices, :]
-            distances = (sampled_words_embeddings.unsqueeze(1) - words_embeddings.unsqueeze(0)).norm(dim=-1)
-            nearest_words_distances, nearest_words_indices = distances.topk(n_nearest_words + 1, dim=-1, largest=False)
+            cos_similarities = nn.functional.cosine_similarity(
+                sampled_words_embeddings.unsqueeze(1).expand(-1, words_embeddings.shape[0], -1),
+                words_embeddings.unsqueeze(0).expand(args.n_words, -1, -1), dim=-1)
+
+            nearest_words_distances, nearest_words_indices = \
+                cos_similarities.topk(n_nearest_words + 1, dim=-1, largest=True)
             nearest_words_distances = nearest_words_distances[:, 1:]
             nearest_words_indices = nearest_words_indices[:, 1:]
             for i in range(sampled_words_embeddings.shape[0]):
@@ -113,7 +117,6 @@ if __name__ == '__main__':
                 for nearest_word_ind, nearest_word_dist in zip(nearest_words_indices[i], nearest_words_distances[i]):
                     nearest_word = Data_train.Vocab_inv[nearest_word_ind.item()]
                     sampled_words_dict[word][v][seed].append((nearest_word, round(nearest_word_dist.item(), 2)))
-            pass
 
     # Write the sampled_words_dict in a csv file
     fieldnames = ['word', 'experiment', 'seed'] + [str(d) + ' nearest word' for d in range(1, args.n_nearest_words + 1)]
