@@ -44,7 +44,7 @@ def getNgramsfromSample(file,n=1):
         #print(mod[:ind_mod],len(ngrams))
         for l in [mod[:ind_mod]]:
              for j in range(n,len(l)+1):
-                 #print(tuple(l[i-n:i]))
+                 print(tuple(l[i-n:i]))
                  if len(set(l[j-n:j])) < len(tuple(l[j-n:j])):
                      repeats+=1
                  if tuple(l[j-n:j]) in ngrams:
@@ -52,7 +52,7 @@ def getNgramsfromSample(file,n=1):
                  else:
                      ngrams.update({tuple(l[j-n:j]):1})
         i+=4
-    total_ngrams = sum([v for k,v in ngrams.items()])
+    total_ngrams = sum([v for k,v in ngrams.items()])+0.0001
     return set(ngrams.keys()), float(repeats)/total_ngrams
 
 
@@ -66,7 +66,7 @@ def extractStats(dataset):
     ngrams = extractNgramsFromData(D, ngrams, type_='train', n=2, person = 'agent')
     mapdict = {20:'Baseline', 23: 'BERT', 30: 'fastText',31: 'GloVe'}#{2:'Baseline', 1:'1E-3',4:'1E0'}#{2:'Baseline', 1: '1E-3', 0: '1E-2',3: '1E-1', 4: '1E0', 5:'1E1', 6:'1E2'}
     seeds = [101,102,103]
-    fieldnames=['alpha','epoch','word repeats','% unseen']
+    fieldnames=['LM Emb','epoch','word repeats','% unseen']
     target = open("quality_analysis_"+dataset+"_valid.csv", "w")
     writer = csv.DictWriter(target, fieldnames=fieldnames)
     writer.writerow(dict(zip(fieldnames, fieldnames)))
@@ -74,6 +74,10 @@ def extractStats(dataset):
         print('Now gathering info from ',v)
         for s in seeds:
             print(s)
+            if 'rames' in dataset:
+                dataset = 'frames'
+            else:
+                dataset = 'mwoz'
             folder = '../Results/' + dataset + '/exp_' + str(k) + '_seed_' + str(s) + '/Samples'
             ep = 1
             for num in range(100):#os.listdir(folder):
@@ -83,7 +87,7 @@ def extractStats(dataset):
                     break
                 else:
                     bi_grams,word_repeats = getNgramsfromSample(path,n=2)
-                    percent_unseen = (len(bi_grams) - len(bi_grams.intersection(ngrams)))/len(bi_grams)
+                    percent_unseen = (len(bi_grams) - len(bi_grams.intersection(ngrams)))/(len(bi_grams)+0.0001)
                     writer.writerow(dict([
                     ('LM Emb',v),
                     ('epoch',str(ep)),
@@ -95,7 +99,7 @@ def extractStats(dataset):
 
 def createGraph(yrange=[5,20], filename = 'ngrams_valid.csv', graphparam = '% unigram'):
     #plt.ylim(yrange[0],yrange[1])
-    sns.lineplot(x = 'epoch', y =graphparam, hue = 'alpha',data = pd.read_csv(filename))
+    sns.lineplot(x = 'epoch', y =graphparam, hue = 'LM Emb',data = pd.read_csv(filename))
     plt.savefig('plot_'+graphparam+'.png')
 
 if __name__ == '__main__':
