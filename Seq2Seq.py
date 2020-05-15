@@ -82,18 +82,18 @@ config['device'] = device
 
 if args.dataset == 'mwoz':
     Data_train = WoZGraphDataset(
-    Data_dir=config['data_path'] + '/MULTIWOZ2/')
+    Data_dir=args.data_path + '/MULTIWOZ2/')
     Data_valid = WoZGraphDataset(
-        Data_dir=config['data_path'] + '/MULTIWOZ2/', suffix='valid')
+        Data_dir=args.data_path + '/MULTIWOZ2/', suffix='valid')
     Data_test = WoZGraphDataset(
-        Data_dir=config['data_path'] + '/MULTIWOZ2/', suffix='test')
+        Data_dir=args.data_path + '/MULTIWOZ2/', suffix='test')
 else:
     Data_train = FramesGraphDataset(
-        Data_dir=config['data_path'] + '/Frames-dataset/')
+        Data_dir=args.data_path + '/Frames-dataset/')
     Data_valid = FramesGraphDataset(
-        Data_dir=config['data_path'] + '/Frames-dataset/', suffix='valid')
+        Data_dir=args.data_path + '/Frames-dataset/', suffix='valid')
     Data_test = FramesGraphDataset(
-        Data_dir=config['data_path'] + '/Frames-dataset/', suffix='test')
+        Data_dir=args.data_path + '/Frames-dataset/', suffix='test')
 
 
 # Hyper-parameters
@@ -136,7 +136,7 @@ class Seq2Seq(nn.Module):
             self.config['device'])
         self.Decoder = AttnDecoderRNN(self.config['hidden_size'], self.config['output_size'], self.config['num_layers'],
                                       self.config['sequence_length']).to(self.config['device'])
-        _, self.weights = Load_embeddings(config['dataset'], config['embeddings'], config['data_path'])
+        _, self.weights = Load_embeddings(config['dataset'], config['embeddings'], args.data_path)
         self.Sem_embedding = nn.Embedding.from_pretrained(
             self.weights, freeze=True).to(self.config['device'])
         # Loss and optimizer
@@ -270,7 +270,6 @@ class Seq2Seq(nn.Module):
                         decoder_input_sampled, decoder_hidden, encoder_outputs)
                     
                     decoder_output = decoder_output.squeeze(1)
-                    print(decoder_output)
                     if type_ == 'train':
                         decoder_output = decoder_output.masked_fill(~mask, -10 ** 6)
 
@@ -385,19 +384,19 @@ if __name__ == '__main__':
                         format='%(asctime)s,%(msecs)d %(name)s %(levelname)s %(message)s',
                         datefmt='%H:%M:%S',
                         level=logging.INFO)
-
-    Model = Seq2Seq(config)
     if os.path.exists(os.path.join(saved_models, config['run_id'] + '_last')):
         logging.info(
             f"Resuming training of model " + os.path.join(saved_models, config['run_id'] + '_last'))
         checkpoint = torch.load(os.path.join(saved_models, config['run_id'] + '_last'))
-        Model.load_state_dict(checkpoint['model_State_dict'])
         config = checkpoint['config']
         config["device"] = device
+        Model = Seq2Seq(config)
+        Model.load_state_dict(checkpoint['model_State_dict'])
         logging.info(str(config))
         if config["wandb_project"] is not None:
             wandb.init(project=config["wandb_project"], resume=config["wandb_id"], allow_val_change=True)
     else:
+        Model = Seq2Seq(config)
         torch.save({'model_State_dict': Model.state_dict(), 'config': config},
                    os.path.join(saved_models, config['run_id'] + '_last'))
         if config["wandb_project"] is not None:
@@ -507,12 +506,10 @@ if __name__ == '__main__':
         args.validation_model +
         '.txt'),
         'w')
+    logging.info(f"{args.validation_model} model validation results:")
     loss_mle_valid, combined_loss_valid, meteor_valid, bleu_valid = \
         Model.modelrun(Data=Data_valid, type_='eval', total_step=Data_valid.num_batches, ep=0,
                        sample_saver=sample_saver_valid)
-    logging.info(f"{args.validation_model} model validation results:   Loss_MLE_eval: {loss_mle_valid:.4f}, "
-                 f"Sem_reward_eval: {combined_loss_valid:.4f}, 'meteor_score': {meteor_valid:.2f}, "
-                 f"'bleu_score': {bleu_valid:.2f}\n")
 
     sample_saver_test = open(os.path.join(
         samples_path,
@@ -521,9 +518,7 @@ if __name__ == '__main__':
         args.validation_model +
         '.txt'),
         'w')
+    logging.info(f"{args.validation_model} model test results:")
     loss_mle_test, combined_loss_test, meteor_test, bleu_test = \
         Model.modelrun(Data=Data_test, type_='eval', total_step=Data_test.num_batches, ep=0,
                        sample_saver=sample_saver_test)
-    logging.info(f"{args.validation_model} model test results:   Loss_MLE_eval: {loss_mle_test:.4f}, "
-                 f"Sem_reward_eval: {combined_loss_test:.4f}, 'meteor_score': {meteor_test:.2f}, "
-                 f"'bleu_score': {bleu_test:.2f}\n")
