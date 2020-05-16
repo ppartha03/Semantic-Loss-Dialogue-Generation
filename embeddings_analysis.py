@@ -16,8 +16,8 @@ parser.add_argument('--results_root', type=str, default='.')
 parser.add_argument('--data_path', type=str, default="./Dataset")
 # which model to use for validation/test, 'best_mle' or 'best_combined',
 # 'best_meteor'
-parser.add_argument('--validation_model', type=str, default='best_bleu',
-                    choices=["best_mle", "best_combined_loss", "best_meteor", "best_bleu", "last"])
+parser.add_argument('--validation_model', type=str, default='best_bleu')
+#                    choices=["best_mle", "best_combined_loss", "best_meteor", "best_bleu", "last"])
 parser.add_argument('--n_words', type=int, default=50)
 parser.add_argument('--n_nearest_words', type=int, default=10)
 
@@ -70,9 +70,8 @@ if __name__ == '__main__':
         Data_train = FramesGraphDataset(
             Data_dir=args.data_path + '/Frames-dataset/')
 
-    mapdict = {300: 'Baseline_4e-2', 298: 'Baseline_4e-3', 301: '1_4e-2', 299: '1_4e-3', 304: '0.5_4e-2',
-               297: '0.5_4e-3'}
-    seeds = [100, 101, 102, 103]
+    mapdict = {20: 'Baseline', 23: 'BERT', 30: 'fastText', 31: 'GloVe'}
+    seeds = [101, 102, 103]
 
     # Sample words
     np.random.seed(100)
@@ -86,6 +85,7 @@ if __name__ == '__main__':
         for seed in seeds:
             run_id = "exp_" + str(k) + "_seed_" + str(seed)
             run_path = os.path.join(args.results_root, "Results", args.dataset, run_id)
+            
             saved_models = os.path.join(run_path, 'Saved_Models')
 
             try:
@@ -120,7 +120,7 @@ if __name__ == '__main__':
 
     # Write the sampled_words_dict in a csv file
     fieldnames = ['word', 'experiment', 'seed'] + [str(d) + ' nearest word' for d in range(1, args.n_nearest_words + 1)]
-    target = open("embeddings_analysis.csv", "w")
+    target = open("embeddings_analysis_"+args.validation_model+".csv", "w")
     writer = csv.DictWriter(target, fieldnames=fieldnames)
     writer.writerow(dict(zip(fieldnames, fieldnames)))
     for word, experiments in sampled_words_dict.items():
