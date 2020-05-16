@@ -243,7 +243,6 @@ class Seq2Seq(nn.Module):
                 print(encoder_outputs.shape, Data[i]['input'].shape)
                 decoder_hidden = (hidden_enc[0][:,b_ind, :],hidden_enc[1][:,b_ind, :])
                 decoder_input_ = decoder_input[b_ind,0]
-
                 node = BeamSearchNode(decoder_hidden, None, torch.argmax(decoder_input_).item(), 0., 1)
                 nodes = PriorityQueue()
                 endnodes = []
@@ -265,7 +264,7 @@ class Seq2Seq(nn.Module):
                         else:
                             continue
 
-                    decoder_output, decoder_hidden_o,_ = self.Decoder(decoder_input_, decoder_hidden, encoder_outputs)
+                    decoder_output, decoder_hidden_o,_ = self.Decoder(decoder_input_, decoder_hidden, encoder_outputs[:,b_ind,:])
                     log_prob, indexes = torch.topk(decoder_output.view(-1), args.beam_width)
                     nextnodes = []
                     logging.info(str(indexes))
