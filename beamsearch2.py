@@ -264,7 +264,7 @@ class Seq2Seq(nn.Module):
                         else:
                             continue
 
-                    decoder_output, decoder_hidden_o = self.Decoder(decoder_input_, decoder_hidden, encoder_outputs)
+                    decoder_output, decoder_hidden_o,_ = self.Decoder(decoder_input_, decoder_hidden, encoder_outputs)
                     log_prob, indexes = torch.topk(decoder_output.view(-1), args.beam_width)
                     nextnodes = []
                     logging.info(str(indexes))
