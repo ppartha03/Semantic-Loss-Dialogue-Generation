@@ -254,7 +254,7 @@ class Seq2Seq(nn.Module):
                     if qsize > 20000: break
 
                     score, n = nodes.get()
-                    decoder_input_ = torch.tensor(n.wordid)
+                    decoder_input_ = torch.tensor(n.wordid).to(config['device'])
                     decoder_hidden = n.h
                     if ( n.wordid == 1 and n.prevNode != None) or n.leng == 20:
                         endnodes.append((score, n))
