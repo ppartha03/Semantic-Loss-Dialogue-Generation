@@ -238,7 +238,7 @@ class Seq2Seq(nn.Module):
 
             #beam decoder: here
 
-            for b_ind in range(self.Data[i]['input'].shape[0]):
+            for b_ind in range(Data[i]['input'].shape[0]):
                 decoder_hidden = (hidden_enc[0][:,b_ind, :],hidden_enc[1][:,b_ind, :])
                 decoder_input_ = decoder_input[b_ind,0,:]
 
@@ -317,8 +317,8 @@ class Seq2Seq(nn.Module):
 
             if type_ !='train':
                 for c_index in range(con.shape[0]):
-                    c = ' '.join([self.Data.Vocab_inv[idx.item()] for idx in con[c_index]])
-                    t_list = [self.Data.Vocab_inv[idx.item()] for idx in tar[c_index]]
+                    c = ' '.join([Data.Vocab_inv[idx.item()] for idx in con[c_index]])
+                    t_list = [Data.Vocab_inv[idx.item()] for idx in tar[c_index]]
                     t = ' '.join(t_list)
                     r = ''
                     for beam_ind in range(args.topk):
