@@ -32,7 +32,7 @@ def plotHexbin(LM,epoch,filename, X_r):
     fig.subplots_adjust(hspace=0.5, left=0.07, right=0.93)
 
     hb = axs.hexbin(X_r[:,0], X_r[:,1], gridsize=80, bins='log', cmap='YlOrBr')
-    ax.axis([-8,10.5,-7,10])
+    axs.axis([-8,10.5,-7,10])
     axs.set_title(LM +' word embeddings distribution after '+epoch+' epochs')
     cb = fig.colorbar(hb, ax=axs)
     cb.set_label('counts')
@@ -83,7 +83,7 @@ if __name__ == '__main__':
             Data_dir=args.data_path + '/Frames-dataset/')
 
     mapdict = {20: 'Baseline', 23: 'BERT', 30: 'fastText', 31: 'GloVe'}
-    seeds = [101, 102, 103]
+    seeds = [101]
 
     # Sample words
     np.random.seed(100)
@@ -116,7 +116,7 @@ if __name__ == '__main__':
             # PCA with sklearn
             words_embeddings = Model.Decoder.embedding.weight.data.to(device)
             X_r = pca.fit(words_embeddings.cpu()).transform(words_embeddings.cpu())
-            plotHexbin(v,args.validation_model,os.path.join('./PCA_plots',args.dataset+'_'+args.validation_model+'_exp_'+v+'_seed_'+str(seed)+'.png',X_r)
+            plotHexbin(v,args.validation_model,os.path.join('./PCA_plots',args.dataset+'_'+args.validation_model+'_exp_'+v+'_seed_'+str(seed)+'.png'),X_r)
             sampled_words_embeddings = words_embeddings[sampled_words_indices, :]
             cos_similarities = nn.functional.cosine_similarity(
                 sampled_words_embeddings.unsqueeze(1).expand(-1, words_embeddings.shape[0], -1),

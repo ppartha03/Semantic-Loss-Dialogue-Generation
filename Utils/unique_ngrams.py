@@ -36,11 +36,11 @@ def getNgrams(file,n=1):
        return 0.000001
     return float(len(ngrams))/float(sum([v for k,v in ngrams.items()]))
 
-def distinctNgrams(dataset): # alpha->exp mapping {1:'1E-1',2:'1E-3'}
-    mapdict = {20:'Baseline', 21: '1E-3', 22: '1E-2',23: '1E-1', 24: '1E0', 25:'1E1'}#{2:'Baseline', 1:'1E-3',4:'1E0'}#{2:'Baseline', 1: '1E-3', 0: '1E-2',3: '1E-1', 4: '1E0', 5:'1E1', 6:'1E2'}
-    seeds = [100,101,102,103,104]
-    fieldnames=['alpha','epoch','% unigram','% bigram']
-    target = open("ngrams_valid.csv", "w")
+def distinctNgrams(filename,dataset): # alpha->exp mapping {1:'1E-1',2:'1E-3'}
+    mapdict = {20:'Baseline',23:'BERT',30:'fastText',31:'GloVe'}#, 21: '1E-3', 22: '1E-2',23: '1E-1', 24: '1E0', 25:'1E1'}#{2:'Baseline', 1:'1E-3',4:'1E0'}#{2:'Baseline', 1: '1E-3', 0: '1E-2',3: '1E-1', 4: '1E0', 5:'1E1', 6:'1E2'}
+    seeds = [101,102,103]
+    fieldnames=['LM Emb','epoch','% unigram','% bigram']
+    target = open(filename, "w")
     writer = csv.DictWriter(target, fieldnames=fieldnames)
     writer.writerow(dict(zip(fieldnames, fieldnames)))
     for k,v in mapdict.items():
@@ -58,7 +58,7 @@ def distinctNgrams(dataset): # alpha->exp mapping {1:'1E-1',2:'1E-3'}
                     one_grams = getNgrams(path,n=1)
                     bi_grams = getNgrams(path,n=2)
                     writer.writerow(dict([
-                    ('alpha',v),
+                    ('LM Emb',v),
                     ('epoch',str(ep)),
                     ('% unigram',str(one_grams)),
                     ('% bigram',str(bi_grams))])
@@ -68,10 +68,10 @@ def distinctNgrams(dataset): # alpha->exp mapping {1:'1E-1',2:'1E-3'}
 
 def createGraph(yrange=[5,20], filename = 'ngrams_valid.csv', graphparam = '% unigram'):
     #plt.ylim(yrange[0],yrange[1])
-    sns.lineplot(x = 'epoch', y =graphparam, hue = 'alpha',data = pd.read_csv(filename))
+    sns.lineplot(x = 'epoch', y =graphparam, hue = 'LM Emb',data = pd.read_csv(filename))
     plt.savefig('plot_'+graphparam+'.png')
 
 if __name__ == '__main__':
-    if not os.path.exists('ngrams_valid.csv'):
-        distinctNgrams(args.dataset)
-    createGraph(graphparam = args.graphparam)
+    if not os.path.exists('ngrams_'+args.dataset+'_valid.csv'):
+        distinctNgrams('ngrams_'+args.dataset+'_valid.csv',args.dataset)
+    createGraph(filename='ngrams_'+args.dataset+'_valid.csv',graphparam = args.graphparam)
