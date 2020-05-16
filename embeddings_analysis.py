@@ -9,6 +9,9 @@ import argparse
 import os
 import logging
 import csv
+import matplotlib.pyplot as plt
+from sklearn import datasets
+from sklearn.decomposition import PCA
 
 parser = argparse.ArgumentParser()
 parser.add_argument('--dataset', type=str, default="frames", choices=["frames", "mwoz"])
@@ -16,8 +19,8 @@ parser.add_argument('--results_root', type=str, default='.')
 parser.add_argument('--data_path', type=str, default="./Dataset")
 # which model to use for validation/test, 'best_mle' or 'best_combined',
 # 'best_meteor'
-parser.add_argument('--validation_model', type=str, default='best_bleu')
-#                    choices=["best_mle", "best_combined_loss", "best_meteor", "best_bleu", "last"])
+parser.add_argument('--validation_model', type=str, default='best_bleu')#,
+                    #choices=["best_mle", "best_combined_loss", "best_meteor", "best_bleu", "last"])
 parser.add_argument('--n_words', type=int, default=50)
 parser.add_argument('--n_nearest_words', type=int, default=10)
 
@@ -79,7 +82,7 @@ if __name__ == '__main__':
     sampled_words = [Data_train.Vocab_inv[ind] for ind in sampled_words_indices]
     sampled_words_dict = {word:{v:{} for _, v in mapdict.items()} for word in sampled_words}
     n_nearest_words = args.n_nearest_words
-
+    pca = PCA(n_components=2)
     # Get nearest words
     for k, v in mapdict.items():
         for seed in seeds:
@@ -101,8 +104,11 @@ if __name__ == '__main__':
             config = checkpoint['config']
             Model = Seq2Seq(config)
             Model.load_state_dict(checkpoint['model_State_dict'])
-
+            # PCA with sklearn
             words_embeddings = Model.Decoder.embedding.weight.data.to(device)
+            X_r = pca.fit(words_embeddings.cpu()).transform(words_embeddings.cpu())
+            plt.scatter(X_r[:,0],X_r[:,1])
+            plt.savefig(os.path.join('./PCA_plots',args.dataset+'_'+args.validation_model+'_exp_'+v+'_seed_'+str(seed)+'.png'))
             sampled_words_embeddings = words_embeddings[sampled_words_indices, :]
             cos_similarities = nn.functional.cosine_similarity(
                 sampled_words_embeddings.unsqueeze(1).expand(-1, words_embeddings.shape[0], -1),
@@ -127,4 +133,3 @@ if __name__ == '__main__':
         for exp, seeds in experiments.items():
             for seed, nearest_words in seeds.items():
                 writer.writerow(dict(zip(fieldnames, [word, exp, seed] + nearest_words)))
-
