@@ -240,6 +240,7 @@ class Seq2Seq(nn.Module):
             topk = args.topk
             decoded_batch = []
             for b_ind in range(Data[i]['input'].shape[0]):
+                print(encoder_outputs.shape, Data[i]['input'].shape)
                 decoder_hidden = (hidden_enc[0][:,b_ind, :],hidden_enc[1][:,b_ind, :])
                 decoder_input_ = decoder_input[b_ind,0]
 
