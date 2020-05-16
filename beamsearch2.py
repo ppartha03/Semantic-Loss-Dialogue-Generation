@@ -239,8 +239,9 @@ class Seq2Seq(nn.Module):
             #beam decoder: here
 
             for b_ind in range(Data[i]['input'].shape[0]):
+                print(decoder_input.shape,decoder_input[0])
                 decoder_hidden = (hidden_enc[0][:,b_ind, :],hidden_enc[1][:,b_ind, :])
-                decoder_input_ = decoder_input[b_ind,0,:]
+                decoder_input_ = decoder_input[b_ind,0]
 
                 node = BeamSearchNode(decoder_hidden, None, torch.argmax(decoder_input_).item(), 0., 1)
                 nodes = PriorityQueue()
