@@ -503,7 +503,7 @@ if __name__ == '__main__':
 
     sample_saver_valid = open(os.path.join(
         samples_path,
-        "beam_"+args.topk+"samples_valid_"+
+        "beam_"+str(args.topk)+"samples_valid_"+
         config['run_id'] + '_' +
         args.validation_model +
         '.txt'),
