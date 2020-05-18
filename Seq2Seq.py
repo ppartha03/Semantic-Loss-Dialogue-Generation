@@ -146,7 +146,7 @@ class Seq2Seq(nn.Module):
         self.Encoder = EncoderRNN(self.config['input_size'], self.config['hidden_size'], self.config['num_layers']).to(
             self.config['device'])
         self.Decoder = AttnDecoderRNN(decoder_input_size,self.config['hidden_size'], self.config['output_size'], self.config['num_layers'],
-                                      self.config['sequence_length']).to(self.config['device'], embedding=init_embedding)
+                                      self.config['sequence_length'], embedding=init_embedding).to(self.config['device'])
         # Loss and optimizer
         self.criterion = nn.NLLLoss(
             weight=torch.from_numpy(
