@@ -96,11 +96,14 @@ class DecoderRNN(nn.Module):
 
 
 class AttnDecoderRNN(nn.Module):
-    def __init__(self, hidden_size, vocab_size, num_layers, maxlength, drop_out=0, bidirectional=False):
+    def __init__(self, input_size, hidden_size, vocab_size, num_layers, maxlength, drop_out=0, bidirectional=False, embedding = None):
         super(AttnDecoderRNN, self).__init__()
         self.hidden_size = hidden_size
         self.vocab_size = vocab_size
-        self.embedding = nn.Embedding(vocab_size, hidden_size, padding_idx=3)
+        if embedding == None:
+            self.embedding = nn.Embedding(vocab_size, hidden_size, padding_idx=3)
+        else:
+            self.embedding = embedding
         self.num_layers = num_layers
         self.max_length = maxlength
         self.dropout_p = drop_out
@@ -108,7 +111,7 @@ class AttnDecoderRNN(nn.Module):
         self.attn_combine = nn.Linear(self.hidden_size * 2, self.hidden_size)
         self.dropout = nn.Dropout(self.dropout_p)
         self.lstm = nn.LSTM(
-            hidden_size,
+            input_size,
             hidden_size,
             self.num_layers,
             dropout=drop_out,

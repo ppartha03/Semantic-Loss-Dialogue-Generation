@@ -39,6 +39,7 @@ parser.add_argument('--num_epochs', type=int, default=100)
 parser.add_argument('--seed', type=int, default=100)
 # calculate sentence embedding using "mean" or "sum" of word embeddings
 parser.add_argument('--sentence_embedding', type=str, default='mean')
+parser.add_argument('--init_embedding',type=str,default=None)
 #Use None for not logging using wandb
 parser.add_argument('--wandb_project', type=str, default=None)
 # which model to use for validation/test, 'best_mle' or 'best_combined',
@@ -132,13 +133,20 @@ class Seq2Seq(nn.Module):
         self.mask = np.hstack(
             [config['mask_special_indices'],
              np.ones(config['input_size'] - len(config['mask_special_indices']))])
-        self.Encoder = EncoderRNN(self.config['input_size'], self.config['hidden_size'], self.config['num_layers']).to(
-            self.config['device'])
-        self.Decoder = AttnDecoderRNN(self.config['hidden_size'], self.config['output_size'], self.config['num_layers'],
-                                      self.config['sequence_length']).to(self.config['device'])
         _, self.weights = Load_embeddings(config['dataset'], config['embeddings'], args.data_path)
         self.Sem_embedding = nn.Embedding.from_pretrained(
             self.weights, freeze=True).to(self.config['device'])
+        if config['init_embedding'] == None:
+            decoder_input_size = config['hidden_size']
+            init_embedding = None
+        else:
+            decoder_input_size = 768
+            init_embedding = nn.Embedding.from_pretrained(
+                self.weights, freeze=False).to(self.config['device'])
+        self.Encoder = EncoderRNN(self.config['input_size'], self.config['hidden_size'], self.config['num_layers']).to(
+            self.config['device'])
+        self.Decoder = AttnDecoderRNN(decoder_hidden_size,self.config['hidden_size'], self.config['output_size'], self.config['num_layers'],
+                                      self.config['sequence_length']).to(self.config['device'], embedding=init_embedding)
         # Loss and optimizer
         self.criterion = nn.NLLLoss(
             weight=torch.from_numpy(
@@ -268,7 +276,7 @@ class Seq2Seq(nn.Module):
                 for di in range(config['sequence_length']):
                     decoder_output, decoder_hidden, _ = self.Decoder(
                         decoder_input_sampled, decoder_hidden, encoder_outputs)
-                    
+
                     decoder_output = decoder_output.squeeze(1)
                     if type_ == 'train':
                         decoder_output = decoder_output.masked_fill(~mask, -10 ** 6)
