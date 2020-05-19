@@ -44,7 +44,6 @@ def getNgramsfromSample(file,n=1):
         #print(mod[:ind_mod],len(ngrams))
         for l in [mod[:ind_mod]]:
              for j in range(n,len(l)+1):
-                 print(tuple(l[i-n:i]))
                  if len(set(l[j-n:j])) < len(tuple(l[j-n:j])):
                      repeats+=1
                  if tuple(l[j-n:j]) in ngrams:
@@ -64,7 +63,7 @@ def extractStats(dataset):
     ngrams = {}
     D = pickle.load(open(os.path.join(folder,'Dataset_train_'+dataset+'.pkl'),'rb'))
     ngrams = extractNgramsFromData(D, ngrams, type_='train', n=2, person = 'agent')
-    mapdict = {20:'Baseline', 23: 'BERT', 30: 'fastText',31: 'GloVe'}#{2:'Baseline', 1:'1E-3',4:'1E0'}#{2:'Baseline', 1: '1E-3', 0: '1E-2',3: '1E-1', 4: '1E0', 5:'1E1', 6:'1E2'}
+    mapdict = {20:'Init-1 Loss-1',23:'Init-1 Loss-2', 40:'Init-2 Loss-1', 41:'Init-2 Loss-2'}#mapdict = {20:'Baseline',40:'BERT Init', 23:'BERT in Train'}#{2:'Baseline', 1:'1E-3',4:'1E0'}#{2:'Baseline', 1: '1E-3', 0: '1E-2',3: '1E-1', 4: '1E0', 5:'1E1', 6:'1E2'}
     seeds = [101,102,103]
     fieldnames=['LM Emb','epoch','word repeats','% unseen']
     target = open("quality_analysis_"+dataset+"_valid.csv", "w")
