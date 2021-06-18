@@ -19,7 +19,7 @@ Although the concept is general, this is more relevant in NLP setting where the 
 ```
 
 @inproceedings{
-  parthasarathi2021Encoder,
+  parthasarathi2021Semantic,
   author       = {Parthasarathi, Prasanna and Abdelsalam, Mohamed and Chandar, Sarath and Pineau, Joelle},
   title        = {A Brief Study on the Effects of Training Generative Dialogue Models witha Semantic loss},
   year         = {2021},
