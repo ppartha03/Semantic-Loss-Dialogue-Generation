@@ -21,7 +21,7 @@ Although the concept is general, this is more relevant in NLP setting where the 
 @inproceedings{
   parthasarathi2021Semantic,
   author       = {Parthasarathi, Prasanna and Abdelsalam, Mohamed and Chandar, Sarath and Pineau, Joelle},
-  title        = {A Brief Study on the Effects of Training Generative Dialogue Models witha Semantic loss},
+  title        = {A Brief Study on the Effects of Training Generative Dialogue Models with a Semantic loss},
   year         = {2021},
   booktitle    = {Proceedings of the 22nd Annual SIGdial Meeting on Discourse and Dialogue},
   publisher    = {Association for Computational Linguistics},
